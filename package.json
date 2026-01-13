@@ -1,0 +1,19 @@
+{
+  "name": "lead-o-tron-5000",
+  "version": "1.0.0",
+  "description": "Personal CRM for The People's Elbow - Door-to-door outreach tracking",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": ["crm", "leads", "outreach", "mutual-aid"],
+  "author": "Alex - The People's Elbow",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "dependencies": {
+    "uuid": "^11.0.0"
+  }
+}
