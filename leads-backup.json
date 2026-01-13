@@ -1,0 +1,108 @@
+{
+  "leads": [
+    {
+      "id": "6966463e-ac13-477a-bc92-34c389c3621f",
+      "name": "Truck and Tap Woodstock",
+      "address": "8640 Main Street, Woodstock, GA 30188",
+      "neighborhood": "Downtown Woodstock",
+      "contactName": "not sure",
+      "contactRole": "female bar tender",
+      "phone": "",
+      "email": "",
+      "visits": [
+        {
+          "date": "2026-01-13T08:00:07.858Z",
+          "notes": "Mentioned I knew Jared the previous manager and did an event with him, the name drop whiffed and she didnt appreciate it but took the card.",
+          "reception": "cold"
+        }
+      ],
+      "scores": {
+        "space": 2,
+        "traffic": 4,
+        "vibes": 2
+      },
+      "totalScore": 8,
+      "status": "active",
+      "created": "2026-01-13T08:00:07.849Z",
+      "lastVisit": "2026-01-13T08:00:07.858Z",
+      "aiEnhanced": true
+    },
+    {
+      "id": "87b7f3f8-e69c-4fc7-812f-761f4f28e40a",
+      "name": "Branches Boutique",
+      "address": "8754 Main Street",
+      "neighborhood": "Downtown Woodstock",
+      "contactName": "Michelle",
+      "contactRole": "Assistant Manager",
+      "phone": "",
+      "email": "",
+      "visits": [
+        {
+          "date": "2026-01-13T16:31:39.782Z",
+          "notes": "Talked to Michelle, she said Rochelle the owner is in jury duty and will be back next week, go talk to them then and try to meet Rochelle",
+          "reception": "warm"
+        }
+      ],
+      "scores": {
+        "space": 3,
+        "traffic": 5,
+        "vibes": 4
+      },
+      "totalScore": 12,
+      "status": "active",
+      "created": "2026-01-13T16:31:39.772Z",
+      "lastVisit": "2026-01-13T16:31:39.782Z",
+      "aiEnhanced": true
+    }
+  ],
+  "activityLog": [
+    {
+      "timestamp": "2026-01-13T16:31:39.793Z",
+      "message": "Added new lead: Branches Boutique"
+    },
+    {
+      "timestamp": "2026-01-13T16:31:39.782Z",
+      "message": "Logged visit to Branches Boutique"
+    },
+    {
+      "timestamp": "2026-01-13T16:31:39.772Z",
+      "message": "Added new lead: Branches Boutique"
+    },
+    {
+      "timestamp": "2026-01-13T16:29:25.981Z",
+      "message": "AI lookup completed for Branches Botique Downtown Woodstock"
+    },
+    {
+      "timestamp": "2026-01-13T16:27:06.065Z",
+      "message": "Lead-o-Tron 5000 initialized. Ready to track leads! 💪"
+    },
+    {
+      "timestamp": "2026-01-13T08:01:19.451Z",
+      "message": "Exported leads to C:\\Users\\alexa\\Lead-o-Tron 5000\\leads-backup.json"
+    },
+    {
+      "timestamp": "2026-01-13T08:00:07.868Z",
+      "message": "Added new lead: Truck and Tap Woodstock"
+    },
+    {
+      "timestamp": "2026-01-13T08:00:07.858Z",
+      "message": "Logged visit to Truck and Tap Woodstock"
+    },
+    {
+      "timestamp": "2026-01-13T08:00:07.849Z",
+      "message": "Added new lead: Truck and Tap Woodstock"
+    },
+    {
+      "timestamp": "2026-01-13T07:59:23.291Z",
+      "message": "AI lookup completed for Truck and Tap Woodstock"
+    },
+    {
+      "timestamp": "2026-01-13T07:57:52.675Z",
+      "message": "Lead-o-Tron 5000 initialized. Ready to track leads! 💪"
+    },
+    {
+      "timestamp": "2026-01-13T07:56:24.000Z",
+      "message": "Lead-o-Tron 5000 initialized. Ready to track leads! 💪"
+    }
+  ]
+}

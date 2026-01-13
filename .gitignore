@@ -1,1 +1,24 @@
-/leads-backup.json
+# Dependencies
+node_modules/
+
+# Electron build output
+dist/
+out/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment/config (contains API keys)
+# Note: config.json is in user's AppData, not in repo

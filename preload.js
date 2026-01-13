@@ -17,12 +17,18 @@ contextBridge.exposeInMainWorld('api', {
   // Visit management
   addVisit: (leadId, visitData) => ipcRenderer.invoke('add-visit', leadId, visitData),
   
+  // Contact management
+  addContact: (leadId, contactData) => ipcRenderer.invoke('add-contact', leadId, contactData),
+  updateContact: (leadId, contactId, updates) => ipcRenderer.invoke('update-contact', leadId, contactId, updates),
+  deleteContact: (leadId, contactId) => ipcRenderer.invoke('delete-contact', leadId, contactId),
+  setPrimaryContact: (leadId, contactId) => ipcRenderer.invoke('set-primary-contact', leadId, contactId),
+  
   // Import/Export
   exportJson: () => ipcRenderer.invoke('export-json'),
   importJson: () => ipcRenderer.invoke('import-json'),
   
   // DeepSeek AI
-  deepseekLookup: (businessName) => ipcRenderer.invoke('deepseek-lookup', businessName),
+  deepseekLookup: (businessName, neighborhoods) => ipcRenderer.invoke('deepseek-lookup', businessName, neighborhoods),
   
   // Activity log
   addActivityLog: (message) => ipcRenderer.invoke('add-activity-log', message),

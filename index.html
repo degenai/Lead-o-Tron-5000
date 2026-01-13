@@ -194,25 +194,13 @@
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label for="leadContactName">Contact Name</label>
-              <input type="text" id="leadContactName" placeholder="Person you spoke with">
+          <div class="form-section contacts-section">
+            <div class="contacts-header">
+              <h3>Contacts</h3>
+              <button type="button" id="addContactBtn" class="btn btn-secondary btn-sm">+ Add Contact</button>
             </div>
-            <div class="form-group">
-              <label for="leadContactRole">Role</label>
-              <input type="text" id="leadContactRole" placeholder="Their position">
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="leadPhone">Phone</label>
-              <input type="tel" id="leadPhone" placeholder="Phone number">
-            </div>
-            <div class="form-group">
-              <label for="leadEmail">Email</label>
-              <input type="email" id="leadEmail" placeholder="Email address">
+            <div id="contactsList" class="contacts-list">
+              <!-- Contacts will be rendered dynamically -->
             </div>
           </div>
 
@@ -317,6 +305,11 @@
             <label for="deepseekApiKey">DeepSeek API Key</label>
             <input type="password" id="deepseekApiKey" placeholder="Enter your API key">
             <small>Used for AI-powered business lookup. <a href="https://platform.deepseek.com" target="_blank">Get API key</a></small>
+          </div>
+          <div class="form-group">
+            <label for="defaultZipcode">Default Zipcode</label>
+            <input type="text" id="defaultZipcode" placeholder="e.g., 30188" maxlength="10">
+            <small>Your local area - helps AI find nearby businesses</small>
           </div>
           <div class="form-group">
             <label>Data Location</label>

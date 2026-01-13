@@ -62,11 +62,11 @@ const elements = {
   leadName: document.getElementById('leadName'),
   leadAddress: document.getElementById('leadAddress'),
   leadNeighborhood: document.getElementById('leadNeighborhood'),
-  leadContactName: document.getElementById('leadContactName'),
-  leadContactRole: document.getElementById('leadContactRole'),
-  leadPhone: document.getElementById('leadPhone'),
-  leadEmail: document.getElementById('leadEmail'),
   leadStatus: document.getElementById('leadStatus'),
+  
+  // Contacts
+  contactsList: document.getElementById('contactsList'),
+  addContactBtn: document.getElementById('addContactBtn'),
   scoreSpace: document.getElementById('scoreSpace'),
   scoreTraffic: document.getElementById('scoreTraffic'),
   scoreVibes: document.getElementById('scoreVibes'),
@@ -101,6 +101,7 @@ const elements = {
   closeSettingsModalBtn: document.getElementById('closeSettingsModalBtn'),
   saveSettingsBtn: document.getElementById('saveSettingsBtn'),
   deepseekApiKey: document.getElementById('deepseekApiKey'),
+  defaultZipcode: document.getElementById('defaultZipcode'),
   dataPathDisplay: document.getElementById('dataPathDisplay'),
   
   // Console
@@ -127,6 +128,7 @@ async function init() {
   // Load config for settings
   const config = await window.api.getConfig();
   elements.deepseekApiKey.value = config.deepseekApiKey || '';
+  elements.defaultZipcode.value = config.defaultZipcode || '';
   
   logActivity('Lead-o-Tron 5000 initialized. Ready to track leads! 💪');
 }
@@ -185,6 +187,9 @@ function setupEventListeners() {
   elements.addQuickVisit.addEventListener('change', () => {
     elements.quickVisitFields.classList.toggle('hidden', !elements.addQuickVisit.checked);
   });
+  
+  // Add contact button
+  elements.addContactBtn.addEventListener('click', () => addContactToForm());
   
   // Visit Modal
   elements.closeVisitModalBtn.addEventListener('click', closeVisitModal);
@@ -666,10 +671,13 @@ async function handleAiLookup() {
   }
   
   elements.aiLookupBtn.disabled = true;
-  showAiStatus('🔄 Looking up business info...', 'loading');
+  showAiStatus('🔄 Searching for business info...', 'loading');
+  
+  // Get existing neighborhoods from leads
+  const existingNeighborhoods = [...new Set(leads.map(l => l.neighborhood).filter(Boolean))];
   
   try {
-    const result = await window.api.deepseekLookup(businessName);
+    const result = await window.api.deepseekLookup(businessName, existingNeighborhoods);
     
     if (result.success && result.data) {
       const data = result.data;
@@ -682,6 +690,18 @@ async function handleAiLookup() {
       if (data.neighborhood && !elements.leadNeighborhood.value) {
         elements.leadNeighborhood.value = data.neighborhood;
         elements.neighborhoodAiTag.classList.remove('hidden');
+        // Show indicator if AI suggested a new neighborhood
+        if (data.isNewNeighborhood) {
+          elements.neighborhoodAiTag.textContent = 'AI (new)';
+          elements.neighborhoodAiTag.title = 'AI suggested a new neighborhood - review if needed';
+        } else {
+          elements.neighborhoodAiTag.textContent = 'AI';
+          elements.neighborhoodAiTag.title = '';
+        }
+      }
+      
+      if (data.phone && !elements.leadPhone.value) {
+        elements.leadPhone.value = data.phone;
       }
       
       showAiStatus('✅ AI lookup complete! Review and edit if needed.', 'success');
@@ -716,7 +736,8 @@ function closeSettingsModal() {
 
 async function handleSaveSettings() {
   const config = {
-    deepseekApiKey: elements.deepseekApiKey.value.trim()
+    deepseekApiKey: elements.deepseekApiKey.value.trim(),
+    defaultZipcode: elements.defaultZipcode.value.trim()
   };
   
   await window.api.saveConfig(config);
