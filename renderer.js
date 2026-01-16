@@ -62,6 +62,7 @@ const elements = {
   leadName: document.getElementById('leadName'),
   leadAddress: document.getElementById('leadAddress'),
   leadNeighborhood: document.getElementById('leadNeighborhood'),
+  leadNeighborhoodOptions: document.getElementById('leadNeighborhoodOptions'),
   leadStatus: document.getElementById('leadStatus'),
   
   // Contacts
@@ -120,6 +121,7 @@ async function init() {
   renderActivityLog();
   updateStats();
   updateNeighborhoodFilter();
+  updateNeighborhoodSelect();
   
   // Show data path
   const dataPath = await window.api.getDataPath();
@@ -177,6 +179,11 @@ function setupEventListeners() {
   elements.cancelModalBtn.addEventListener('click', closeLeadModal);
   elements.leadForm.addEventListener('submit', handleLeadSubmit);
   elements.aiLookupBtn.addEventListener('click', handleAiLookup);
+  elements.leadList.addEventListener('click', handleLeadListClick);
+  elements.detailContent.addEventListener('click', handleDetailContentClick);
+  elements.contactsList.addEventListener('click', handleContactsListClick);
+  elements.contactsList.addEventListener('change', handleContactsListChange);
+  elements.contactsList.addEventListener('input', handleContactsListInput);
   
   // Score sliders
   elements.scoreSpace.addEventListener('input', updateScoreDisplay);
@@ -213,6 +220,68 @@ function setupEventListeners() {
   });
 }
 
+function handleLeadListClick(event) {
+  const actionButton = event.target.closest('[data-action="open-lead-modal"]');
+  if (actionButton) {
+    openLeadModal();
+    return;
+  }
+
+  const leadCard = event.target.closest('.lead-card');
+  if (leadCard && leadCard.dataset.id) {
+    selectLead(leadCard.dataset.id);
+  }
+}
+
+function handleDetailContentClick(event) {
+  const visitButton = event.target.closest('[data-action="open-visit-modal"]');
+  if (visitButton && visitButton.dataset.leadId) {
+    openVisitModal(visitButton.dataset.leadId);
+    return;
+  }
+
+  const toggleButton = event.target.closest('[data-action="toggle-other-contacts"]');
+  if (toggleButton) {
+    const list = toggleButton.nextElementSibling;
+    const icon = toggleButton.querySelector('.expand-icon');
+    if (list && icon) {
+      list.classList.toggle('hidden');
+      icon.textContent = list.classList.contains('hidden') ? '▶' : '▼';
+    }
+  }
+}
+
+function handleContactsListClick(event) {
+  const removeButton = event.target.closest('[data-action="remove-contact"]');
+  if (removeButton) {
+    const index = Number(removeButton.dataset.index);
+    if (!Number.isNaN(index)) {
+      removeContactFromForm(index);
+    }
+  }
+}
+
+function handleContactsListChange(event) {
+  const target = event.target;
+  if (target.matches('[data-action="set-primary-contact"]')) {
+    const index = Number(target.dataset.index);
+    if (!Number.isNaN(index)) {
+      setFormContactPrimary(index);
+    }
+  }
+}
+
+function handleContactsListInput(event) {
+  const target = event.target;
+  if (target.matches('[data-action="update-contact"]')) {
+    const index = Number(target.dataset.index);
+    const field = target.dataset.field;
+    if (!Number.isNaN(index) && field) {
+      updateFormContact(index, field, target.value);
+    }
+  }
+}
+
 // ============================================
 // RENDERING
 // ============================================
@@ -226,21 +295,13 @@ function renderLeadList() {
       <div class="empty-state">
         <div class="empty-state-icon">📋</div>
         <div class="empty-state-text">No leads found</div>
-        <button class="btn btn-primary" onclick="document.getElementById('addLeadBtn').click()">
+        <button class="btn btn-primary" data-action="open-lead-modal">
           + Add Your First Lead
         </button>
       </div>
     `;
   } else {
     elements.leadList.innerHTML = sorted.map(lead => renderLeadCard(lead)).join('');
-    
-    // Add click handlers
-    document.querySelectorAll('.lead-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const leadId = card.dataset.id;
-        selectLead(leadId);
-      });
-    });
   }
   
   elements.leadCount.textContent = `${sorted.length} lead${sorted.length !== 1 ? 's' : ''}`;
@@ -295,21 +356,7 @@ function renderDetailPanel(lead) {
         <div class="detail-label">Neighborhood</div>
         <div class="detail-value ${!lead.neighborhood ? 'empty' : ''}">${escapeHtml(lead.neighborhood) || 'Not set'}</div>
       </div>
-      <div class="detail-field">
-        <div class="detail-label">Contact</div>
-        <div class="detail-value ${!lead.contactName ? 'empty' : ''}">
-          ${lead.contactName ? escapeHtml(lead.contactName) : 'Not set'}
-          ${lead.contactRole ? ` (${escapeHtml(lead.contactRole)})` : ''}
-        </div>
-      </div>
-      <div class="detail-field">
-        <div class="detail-label">Phone</div>
-        <div class="detail-value ${!lead.phone ? 'empty' : ''}">${escapeHtml(lead.phone) || 'Not set'}</div>
-      </div>
-      <div class="detail-field">
-        <div class="detail-label">Email</div>
-        <div class="detail-value ${!lead.email ? 'empty' : ''}">${escapeHtml(lead.email) || 'Not set'}</div>
-      </div>
+      ${renderContactsSection(lead)}
     </div>
     
     <div class="detail-section">
@@ -348,7 +395,7 @@ function renderDetailPanel(lead) {
           </div>
         `).join('')
       }
-      <button class="btn btn-primary add-visit-btn" onclick="openVisitModal('${lead.id}')">
+      <button class="btn btn-primary add-visit-btn" data-action="open-visit-modal" data-lead-id="${lead.id}">
         + Log New Visit
       </button>
     </div>
@@ -476,6 +523,13 @@ function updateNeighborhoodFilter() {
     neighborhoods.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
 }
 
+function updateNeighborhoodSelect() {
+  const neighborhoods = [...new Set(leads.map(l => l.neighborhood).filter(Boolean))].sort();
+  elements.leadNeighborhoodOptions.innerHTML = neighborhoods
+    .map(n => `<option value="${escapeHtml(n)}"></option>`)
+    .join('');
+}
+
 // ============================================
 // LEAD OPERATIONS
 // ============================================
@@ -497,6 +551,9 @@ function closeDetailPanel() {
   renderLeadList();
 }
 
+// Track contacts being edited in the form
+let formContacts = [];
+
 function openLeadModal(lead = null) {
   editMode = !!lead;
   elements.modalTitle.textContent = lead ? 'Edit Lead' : 'Add New Lead';
@@ -514,24 +571,170 @@ function openLeadModal(lead = null) {
     elements.leadName.value = lead.name;
     elements.leadAddress.value = lead.address;
     elements.leadNeighborhood.value = lead.neighborhood;
-    elements.leadContactName.value = lead.contactName;
-    elements.leadContactRole.value = lead.contactRole;
-    elements.leadPhone.value = lead.phone;
-    elements.leadEmail.value = lead.email;
     elements.leadStatus.value = lead.status;
     elements.scoreSpace.value = lead.scores.space;
     elements.scoreTraffic.value = lead.scores.traffic;
     elements.scoreVibes.value = lead.scores.vibes;
+    
+    // Load contacts
+    formContacts = (lead.contacts || []).map(c => ({ ...c }));
   } else {
     elements.leadId.value = '';
     elements.scoreSpace.value = 3;
     elements.scoreTraffic.value = 3;
     elements.scoreVibes.value = 3;
+    formContacts = [];
   }
   
+  renderFormContacts();
   updateScoreDisplay();
+  updateNeighborhoodSelect();
   elements.leadModal.classList.remove('hidden');
   elements.leadName.focus();
+}
+
+function renderFormContacts() {
+  if (formContacts.length === 0) {
+    elements.contactsList.innerHTML = `
+      <div class="empty-contacts">
+        <p>No contacts added yet</p>
+      </div>
+    `;
+  } else {
+    elements.contactsList.innerHTML = formContacts.map((contact, index) => `
+      <div class="contact-card" data-contact-index="${index}">
+        <div class="contact-card-header">
+          <label class="primary-checkbox">
+            <input type="radio" name="primaryContact" ${contact.isPrimary ? 'checked' : ''} data-action="set-primary-contact" data-index="${index}">
+            <span class="primary-label">${contact.isPrimary ? '★ Primary' : 'Set Primary'}</span>
+          </label>
+          <button type="button" class="btn btn-icon btn-sm remove-contact-btn" data-action="remove-contact" data-index="${index}" title="Remove contact">✕</button>
+        </div>
+        <div class="contact-card-fields">
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label>Name</label>
+              <input type="text" value="${escapeHtml(contact.name)}" data-action="update-contact" data-index="${index}" data-field="name" placeholder="Contact name">
+            </div>
+            <div class="form-group flex-grow">
+              <label>Role</label>
+              <input type="text" value="${escapeHtml(contact.role)}" data-action="update-contact" data-index="${index}" data-field="role" placeholder="Position/title">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label>Phone</label>
+              <input type="tel" value="${escapeHtml(contact.phone)}" data-action="update-contact" data-index="${index}" data-field="phone" placeholder="Phone number">
+            </div>
+            <div class="form-group flex-grow">
+              <label>Email</label>
+              <input type="email" value="${escapeHtml(contact.email)}" data-action="update-contact" data-index="${index}" data-field="email" placeholder="Email address">
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+function addContactToForm() {
+  const newContact = {
+    id: 'temp-' + Date.now(),
+    name: '',
+    role: '',
+    phone: '',
+    email: '',
+    isPrimary: formContacts.length === 0 // First contact is primary by default
+  };
+  formContacts.push(newContact);
+  renderFormContacts();
+  
+  // Focus the name field of the new contact
+  const lastCard = elements.contactsList.querySelector('.contact-card:last-child input[type="text"]');
+  if (lastCard) lastCard.focus();
+}
+
+function removeContactFromForm(index) {
+  const wassPrimary = formContacts[index].isPrimary;
+  formContacts.splice(index, 1);
+  
+  // If we removed the primary, make the first one primary
+  if (wassPrimary && formContacts.length > 0) {
+    formContacts[0].isPrimary = true;
+  }
+  
+  renderFormContacts();
+}
+
+function updateFormContact(index, field, value) {
+  if (formContacts[index]) {
+    formContacts[index][field] = value;
+  }
+}
+
+function setFormContactPrimary(index) {
+  formContacts.forEach((c, i) => {
+    c.isPrimary = i === index;
+  });
+  renderFormContacts();
+}
+
+function renderContactsSection(lead) {
+  const contacts = lead.contacts || [];
+  
+  if (contacts.length === 0) {
+    return `
+      <div class="detail-field">
+        <div class="detail-label">Contact</div>
+        <div class="detail-value empty">No contacts added</div>
+      </div>
+    `;
+  }
+  
+  const primaryContact = contacts.find(c => c.isPrimary) || contacts[0];
+  const otherContacts = contacts.filter(c => c !== primaryContact);
+  
+  let html = `
+    <div class="primary-contact-card">
+      <div class="contact-badge primary">★ Primary Contact</div>
+      <div class="contact-name">${escapeHtml(primaryContact.name) || 'No name'}</div>
+      ${primaryContact.role ? `<div class="contact-role">${escapeHtml(primaryContact.role)}</div>` : ''}
+      <div class="contact-details">
+        <div class="detail-field">
+          <div class="detail-label">Phone</div>
+          <div class="detail-value ${!primaryContact.phone ? 'empty' : ''}">${escapeHtml(primaryContact.phone) || 'Not set'}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-label">Email</div>
+          <div class="detail-value ${!primaryContact.email ? 'empty' : ''}">${escapeHtml(primaryContact.email) || 'Not set'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  if (otherContacts.length > 0) {
+    html += `
+      <div class="other-contacts-section">
+        <button type="button" class="expand-contacts-btn" data-action="toggle-other-contacts">
+          <span class="expand-icon">▶</span> ${otherContacts.length} other contact${otherContacts.length > 1 ? 's' : ''}
+        </button>
+        <div class="other-contacts-list hidden">
+          ${otherContacts.map(contact => `
+            <div class="other-contact-card">
+              <div class="contact-name">${escapeHtml(contact.name) || 'No name'}</div>
+              ${contact.role ? `<div class="contact-role">${escapeHtml(contact.role)}</div>` : ''}
+              <div class="contact-mini-details">
+                ${contact.phone ? `<span>📞 ${escapeHtml(contact.phone)}</span>` : ''}
+                ${contact.email ? `<span>✉️ ${escapeHtml(contact.email)}</span>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+  
+  return html;
 }
 
 function closeLeadModal() {
@@ -542,14 +745,28 @@ function closeLeadModal() {
 async function handleLeadSubmit(e) {
   e.preventDefault();
   
+  // Clean up contacts - remove empty ones and assign proper IDs
+  const cleanedContacts = formContacts
+    .filter(c => c.name || c.phone || c.email) // Keep contacts with at least some info
+    .map(c => ({
+      id: c.id.startsWith('temp-') ? undefined : c.id, // Let backend assign new IDs
+      name: c.name.trim(),
+      role: c.role.trim(),
+      phone: c.phone.trim(),
+      email: c.email.trim(),
+      isPrimary: c.isPrimary
+    }));
+  
+  // Ensure exactly one primary if contacts exist
+  if (cleanedContacts.length > 0 && !cleanedContacts.some(c => c.isPrimary)) {
+    cleanedContacts[0].isPrimary = true;
+  }
+  
   const leadData = {
     name: elements.leadName.value.trim(),
     address: elements.leadAddress.value.trim(),
     neighborhood: elements.leadNeighborhood.value.trim(),
-    contactName: elements.leadContactName.value.trim(),
-    contactRole: elements.leadContactRole.value.trim(),
-    phone: elements.leadPhone.value.trim(),
-    email: elements.leadEmail.value.trim(),
+    contacts: cleanedContacts,
     status: elements.leadStatus.value,
     scores: {
       space: parseInt(elements.scoreSpace.value),
@@ -593,6 +810,7 @@ async function handleLeadSubmit(e) {
   renderLeadList();
   updateStats();
   updateNeighborhoodFilter();
+  updateNeighborhoodSelect();
 }
 
 async function handleDeleteLead() {
@@ -682,6 +900,11 @@ async function handleAiLookup() {
     if (result.success && result.data) {
       const data = result.data;
       
+      // Update business name if AI found the correct spelling (e.g., Sucré instead of Sucre)
+      if (data.correctName && data.correctName !== businessName) {
+        elements.leadName.value = data.correctName;
+      }
+      
       if (data.address && !elements.leadAddress.value) {
         elements.leadAddress.value = data.address;
         elements.addressAiTag.classList.remove('hidden');
@@ -700,8 +923,17 @@ async function handleAiLookup() {
         }
       }
       
-      if (data.phone && !elements.leadPhone.value) {
-        elements.leadPhone.value = data.phone;
+      // If AI found a phone and we have no contacts yet, create one
+      if (data.phone && formContacts.length === 0) {
+        formContacts.push({
+          id: 'temp-' + Date.now(),
+          name: '',
+          role: '',
+          phone: data.phone,
+          email: '',
+          isPrimary: true
+        });
+        renderFormContacts();
       }
       
       showAiStatus('✅ AI lookup complete! Review and edit if needed.', 'success');
@@ -763,6 +995,7 @@ async function handleImport() {
     renderLeadList();
     updateStats();
     updateNeighborhoodFilter();
+    updateNeighborhoodSelect();
     renderActivityLog();
     logActivity(`Imported ${result.count} leads from backup`);
   } else if (result.error) {
@@ -930,9 +1163,6 @@ function debounce(func, wait) {
     timeout = setTimeout(later, wait);
   };
 }
-
-// Make openVisitModal globally accessible for onclick
-window.openVisitModal = openVisitModal;
 
 // Initialize app
 init();

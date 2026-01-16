@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const fsp = fs.promises;
 const { v4: uuidv4 } = require('uuid');
+const { normalizeLeadsData } = require('./data-normalizer');
 
 // Data file paths
 const userDataPath = app.getPath('userData');
@@ -50,50 +52,17 @@ app.on('window-all-closed', () => {
 
 // ============ DATA MANAGEMENT ============
 
-function loadLeads() {
+async function loadLeads() {
   try {
     if (fs.existsSync(leadsFilePath)) {
-      const data = fs.readFileSync(leadsFilePath, 'utf-8');
+      const data = await fsp.readFile(leadsFilePath, 'utf-8');
       const parsed = JSON.parse(data);
-      
-      // Migrate leads to new contacts array format
-      let needsSave = false;
-      if (parsed.leads && Array.isArray(parsed.leads)) {
-        parsed.leads = parsed.leads.map(lead => {
-          // Check if migration is needed (has old flat contact fields but no contacts array)
-          if (!lead.contacts && (lead.contactName || lead.contactRole || lead.phone || lead.email)) {
-            needsSave = true;
-            // Create contacts array from old flat fields
-            const contacts = [];
-            if (lead.contactName || lead.phone || lead.email) {
-              contacts.push({
-                id: uuidv4(),
-                name: lead.contactName || '',
-                role: lead.contactRole || '',
-                phone: lead.phone || '',
-                email: lead.email || '',
-                isPrimary: true
-              });
-            }
-            // Return migrated lead without old flat fields
-            const { contactName, contactRole, phone, email, ...rest } = lead;
-            return { ...rest, contacts };
-          }
-          // Ensure contacts array exists
-          if (!lead.contacts) {
-            lead.contacts = [];
-          }
-          return lead;
-        });
-        
-        // Save if migration occurred
-        if (needsSave) {
-          saveLeads(parsed);
-          console.log('Migrated leads to new contacts format');
-        }
+      const { data: normalized, needsSave } = normalizeLeadsData(parsed);
+      if (needsSave) {
+        await saveLeads(normalized);
+        console.log('Migrated leads to latest format');
       }
-      
-      return parsed;
+      return normalized;
     }
   } catch (error) {
     console.error('Error loading leads:', error);
@@ -101,9 +70,9 @@ function loadLeads() {
   return { leads: [], activityLog: [] };
 }
 
-function saveLeads(data) {
+async function saveLeads(data) {
   try {
-    fs.writeFileSync(leadsFilePath, JSON.stringify(data, null, 2), 'utf-8');
+    await fsp.writeFile(leadsFilePath, JSON.stringify(data, null, 2), 'utf-8');
     return true;
   } catch (error) {
     console.error('Error saving leads:', error);
@@ -111,21 +80,21 @@ function saveLeads(data) {
   }
 }
 
-function loadConfig() {
+async function loadConfig() {
   try {
     if (fs.existsSync(configFilePath)) {
-      const data = fs.readFileSync(configFilePath, 'utf-8');
+      const data = await fsp.readFile(configFilePath, 'utf-8');
       return JSON.parse(data);
     }
   } catch (error) {
     console.error('Error loading config:', error);
   }
-  return { deepseekApiKey: '' };
+  return { deepseekApiKey: '', defaultZipcode: '' };
 }
 
-function saveConfig(config) {
+async function saveConfig(config) {
   try {
-    fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf-8');
+    await fsp.writeFile(configFilePath, JSON.stringify(config, null, 2), 'utf-8');
     return true;
   } catch (error) {
     console.error('Error saving config:', error);
@@ -149,29 +118,36 @@ function addActivityLog(data, message) {
 // ============ IPC HANDLERS ============
 
 ipcMain.handle('get-leads', async () => {
-  return loadLeads();
+  return await loadLeads();
 });
 
 ipcMain.handle('save-leads', async (event, data) => {
-  return saveLeads(data);
+  return await saveLeads(data);
 });
 
 ipcMain.handle('get-config', async () => {
-  return loadConfig();
+  return await loadConfig();
 });
 
 ipcMain.handle('save-config', async (event, config) => {
-  return saveConfig(config);
+  return await saveConfig(config);
 });
 
 ipcMain.handle('create-lead', async (event, leadData) => {
-  const data = loadLeads();
+  const data = await loadLeads();
+  
+  // Assign UUIDs to contacts
+  const contacts = (leadData.contacts || []).map(contact => ({
+    ...contact,
+    id: contact.id || uuidv4()
+  }));
+  
   const newLead = {
     id: uuidv4(),
     name: leadData.name || '',
     address: leadData.address || '',
     neighborhood: leadData.neighborhood || '',
-    contacts: leadData.contacts || [],
+    contacts: contacts,
     visits: [],
     scores: {
       space: leadData.scores?.space || 3,
@@ -186,14 +162,13 @@ ipcMain.handle('create-lead', async (event, leadData) => {
   };
   
   data.leads.push(newLead);
-  addActivityLog(data, `Added new lead: ${newLead.name}`);
-  saveLeads(data);
+  await saveLeads(data);
   
   return newLead;
 });
 
 ipcMain.handle('update-lead', async (event, leadId, updates) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const leadIndex = data.leads.findIndex(l => l.id === leadId);
   
   if (leadIndex !== -1) {
@@ -202,9 +177,16 @@ ipcMain.handle('update-lead', async (event, leadId, updates) => {
       updates.totalScore = updates.scores.space + updates.scores.traffic + updates.scores.vibes;
     }
     
+    // Assign UUIDs to new contacts
+    if (updates.contacts) {
+      updates.contacts = updates.contacts.map(contact => ({
+        ...contact,
+        id: contact.id || uuidv4()
+      }));
+    }
+    
     data.leads[leadIndex] = { ...data.leads[leadIndex], ...updates };
-    addActivityLog(data, `Updated lead: ${data.leads[leadIndex].name}`);
-    saveLeads(data);
+    await saveLeads(data);
     return data.leads[leadIndex];
   }
   
@@ -212,14 +194,13 @@ ipcMain.handle('update-lead', async (event, leadId, updates) => {
 });
 
 ipcMain.handle('delete-lead', async (event, leadId) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const leadIndex = data.leads.findIndex(l => l.id === leadId);
   
   if (leadIndex !== -1) {
     const leadName = data.leads[leadIndex].name;
     data.leads.splice(leadIndex, 1);
-    addActivityLog(data, `Deleted lead: ${leadName}`);
-    saveLeads(data);
+    await saveLeads(data);
     return true;
   }
   
@@ -227,7 +208,7 @@ ipcMain.handle('delete-lead', async (event, leadId) => {
 });
 
 ipcMain.handle('add-visit', async (event, leadId, visitData) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const lead = data.leads.find(l => l.id === leadId);
   
   if (lead) {
@@ -240,8 +221,7 @@ ipcMain.handle('add-visit', async (event, leadId, visitData) => {
     lead.visits.push(visit);
     lead.lastVisit = visit.date;
     
-    addActivityLog(data, `Logged visit to ${lead.name}`);
-    saveLeads(data);
+    await saveLeads(data);
     return lead;
   }
   
@@ -249,7 +229,7 @@ ipcMain.handle('add-visit', async (event, leadId, visitData) => {
 });
 
 ipcMain.handle('export-json', async () => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Export Leads',
     defaultPath: 'leads-backup.json',
@@ -257,7 +237,7 @@ ipcMain.handle('export-json', async () => {
   });
   
   if (!result.canceled && result.filePath) {
-    fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf-8');
+    await fsp.writeFile(result.filePath, JSON.stringify(data, null, 2), 'utf-8');
     return { success: true, path: result.filePath };
   }
   
@@ -273,19 +253,20 @@ ipcMain.handle('import-json', async () => {
   
   if (!result.canceled && result.filePaths.length > 0) {
     try {
-      const importedData = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf-8'));
+      const fileContent = await fsp.readFile(result.filePaths[0], 'utf-8');
+      const importedData = JSON.parse(fileContent);
       
       // Validate structure
       if (!importedData.leads || !Array.isArray(importedData.leads)) {
         return { success: false, error: 'Invalid JSON structure' };
       }
       
-      const currentData = loadLeads();
-      addActivityLog(currentData, `Imported ${importedData.leads.length} leads from backup`);
+      const currentData = await loadLeads();
+      const { data: normalized } = normalizeLeadsData(importedData);
       
       // Merge imported data
-      importedData.activityLog = currentData.activityLog;
-      saveLeads(importedData);
+      normalized.activityLog = currentData.activityLog;
+      await saveLeads(normalized);
       
       return { success: true, count: importedData.leads.length };
     } catch (error) {
@@ -302,7 +283,7 @@ ipcMain.handle('get-data-path', async () => {
 
 // DeepSeek API lookup with web search
 ipcMain.handle('deepseek-lookup', async (event, businessName, existingNeighborhoods = []) => {
-  const config = loadConfig();
+  const config = await loadConfig();
   
   if (!config.deepseekApiKey) {
     return { success: false, error: 'API key not configured' };
@@ -334,12 +315,15 @@ ipcMain.handle('deepseek-lookup', async (event, businessName, existingNeighborho
 
 Return ONLY valid JSON with no markdown formatting or code blocks. Return this exact structure:
 {
+  "correctName": "the official/correct business name with proper spelling, accents, capitalization (e.g., Sucré not Sucre)",
   "address": "full street address or empty string",
   "neighborhood": "area/district name - PREFER choosing from existing neighborhoods if applicable",
   "phone": "business phone number or empty string",
   "businessType": "type of business or empty string",
   "isNewNeighborhood": true/false (true only if you're suggesting a neighborhood not in the existing list)
 }
+
+IMPORTANT: If you find the official business name has different spelling (accents, capitalization, etc.), return it in "correctName". Example: user types "sucre" but official name is "Sucré".
 
 EXISTING NEIGHBORHOODS (prefer these): ${neighborhoodList}
 
@@ -350,8 +334,7 @@ Only suggest a new neighborhood if the business location clearly doesn't fit any
             content: `Look up business information for: "${businessName}" ${locationContext}. Search the web for current address, phone number, and location details. If you cannot find specific information, return empty strings for those fields. Return only the JSON object.`
           }
         ],
-        tools: ['web_search'],
-        tool_choice: 'auto',
+        web_search: { enable: true },
         temperature: 0.3,
         max_tokens: 500
       })
@@ -377,16 +360,16 @@ Only suggest a new neighborhood if the business location clearly doesn't fit any
 });
 
 ipcMain.handle('add-activity-log', async (event, message) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   addActivityLog(data, message);
-  saveLeads(data);
+  await saveLeads(data);
   return true;
 });
 
 // ============ CONTACT MANAGEMENT ============
 
 ipcMain.handle('add-contact', async (event, leadId, contactData) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const lead = data.leads.find(l => l.id === leadId);
   
   if (lead) {
@@ -405,8 +388,7 @@ ipcMain.handle('add-contact', async (event, leadId, contactData) => {
     }
     
     lead.contacts.push(newContact);
-    addActivityLog(data, `Added contact ${newContact.name} to ${lead.name}`);
-    saveLeads(data);
+    await saveLeads(data);
     return lead;
   }
   
@@ -414,14 +396,14 @@ ipcMain.handle('add-contact', async (event, leadId, contactData) => {
 });
 
 ipcMain.handle('update-contact', async (event, leadId, contactId, updates) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const lead = data.leads.find(l => l.id === leadId);
   
   if (lead) {
     const contactIndex = lead.contacts.findIndex(c => c.id === contactId);
     if (contactIndex !== -1) {
       lead.contacts[contactIndex] = { ...lead.contacts[contactIndex], ...updates };
-      saveLeads(data);
+      await saveLeads(data);
       return lead;
     }
   }
@@ -430,7 +412,7 @@ ipcMain.handle('update-contact', async (event, leadId, contactId, updates) => {
 });
 
 ipcMain.handle('delete-contact', async (event, leadId, contactId) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const lead = data.leads.find(l => l.id === leadId);
   
   if (lead) {
@@ -444,8 +426,7 @@ ipcMain.handle('delete-contact', async (event, leadId, contactId) => {
         lead.contacts[0].isPrimary = true;
       }
       
-      addActivityLog(data, `Removed contact from ${lead.name}`);
-      saveLeads(data);
+      await saveLeads(data);
       return lead;
     }
   }
@@ -454,7 +435,7 @@ ipcMain.handle('delete-contact', async (event, leadId, contactId) => {
 });
 
 ipcMain.handle('set-primary-contact', async (event, leadId, contactId) => {
-  const data = loadLeads();
+  const data = await loadLeads();
   const lead = data.leads.find(l => l.id === leadId);
   
   if (lead) {
@@ -462,7 +443,7 @@ ipcMain.handle('set-primary-contact', async (event, leadId, contactId) => {
     lead.contacts.forEach(c => {
       c.isPrimary = c.id === contactId;
     });
-    saveLeads(data);
+    await saveLeads(data);
     return lead;
   }
   
