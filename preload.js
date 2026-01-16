@@ -27,7 +27,10 @@ contextBridge.exposeInMainWorld('api', {
   exportJson: () => ipcRenderer.invoke('export-json'),
   importJson: () => ipcRenderer.invoke('import-json'),
   
-  // DeepSeek AI
+  // Business Lookup - BrowserView powered (recommended)
+  openLookupWindow: (businessName, location) => ipcRenderer.invoke('open-lookup-window', businessName, location),
+  
+  // DeepSeek AI - DEPRECATED: Use openLookupWindow instead
   deepseekLookup: (businessName, neighborhoods) => ipcRenderer.invoke('deepseek-lookup', businessName, neighborhoods),
   
   // Activity log

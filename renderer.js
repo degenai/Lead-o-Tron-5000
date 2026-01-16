@@ -102,6 +102,7 @@ const elements = {
   closeSettingsModalBtn: document.getElementById('closeSettingsModalBtn'),
   saveSettingsBtn: document.getElementById('saveSettingsBtn'),
   deepseekApiKey: document.getElementById('deepseekApiKey'),
+  defaultLocation: document.getElementById('defaultLocation'),
   defaultZipcode: document.getElementById('defaultZipcode'),
   dataPathDisplay: document.getElementById('dataPathDisplay'),
   
@@ -130,6 +131,7 @@ async function init() {
   // Load config for settings
   const config = await window.api.getConfig();
   elements.deepseekApiKey.value = config.deepseekApiKey || '';
+  elements.defaultLocation.value = config.defaultLocation || '';
   elements.defaultZipcode.value = config.defaultZipcode || '';
   
   logActivity('Lead-o-Tron 5000 initialized. Ready to track leads! 💪');
@@ -460,12 +462,14 @@ function getFilteredLeads() {
     
     // Search filter
     if (search) {
+      const contactFields = (lead.contacts || [])
+        .flatMap(c => [c.name, c.phone, c.email])
+        .filter(Boolean);
       const searchFields = [
         lead.name,
         lead.address,
         lead.neighborhood,
-        lead.contactName,
-        lead.email
+        ...contactFields
       ].join(' ').toLowerCase();
       if (!searchFields.includes(search)) return false;
     }
@@ -655,11 +659,11 @@ function addContactToForm() {
 }
 
 function removeContactFromForm(index) {
-  const wassPrimary = formContacts[index].isPrimary;
+  const wasPrimary = formContacts[index].isPrimary;
   formContacts.splice(index, 1);
   
   // If we removed the primary, make the first one primary
-  if (wassPrimary && formContacts.length > 0) {
+  if (wasPrimary && formContacts.length > 0) {
     formContacts[0].isPrimary = true;
   }
   
@@ -889,25 +893,30 @@ async function handleAiLookup() {
   }
   
   elements.aiLookupBtn.disabled = true;
-  showAiStatus('🔄 Searching for business info...', 'loading');
-  
-  // Get existing neighborhoods from leads
-  const existingNeighborhoods = [...new Set(leads.map(l => l.neighborhood).filter(Boolean))];
+  showAiStatus('🔍 Opening Google search...', 'loading');
   
   try {
-    const result = await window.api.deepseekLookup(businessName, existingNeighborhoods);
+    // Get config for location
+    const config = await window.api.getConfig();
+    const location = [config.defaultLocation, config.defaultZipcode].filter(Boolean).join(' ');
+    
+    // Open the lookup window - this returns when user extracts data or cancels
+    const result = await window.api.openLookupWindow(businessName, location);
     
     if (result.success && result.data) {
       const data = result.data;
+      let appliedChanges = false;
       
       // Update business name if AI found the correct spelling (e.g., Sucré instead of Sucre)
       if (data.correctName && data.correctName !== businessName) {
         elements.leadName.value = data.correctName;
+        appliedChanges = true;
       }
       
       if (data.address && !elements.leadAddress.value) {
         elements.leadAddress.value = data.address;
         elements.addressAiTag.classList.remove('hidden');
+        appliedChanges = true;
       }
       
       if (data.neighborhood && !elements.leadNeighborhood.value) {
@@ -921,23 +930,38 @@ async function handleAiLookup() {
           elements.neighborhoodAiTag.textContent = 'AI';
           elements.neighborhoodAiTag.title = '';
         }
+        appliedChanges = true;
       }
       
-      // If AI found a phone and we have no contacts yet, create one
+      // If AI found a phone and we have no contacts yet, create one with "Main Phone" as name
       if (data.phone && formContacts.length === 0) {
         formContacts.push({
           id: 'temp-' + Date.now(),
-          name: '',
+          name: 'Main Phone',
           role: '',
           phone: data.phone,
           email: '',
           isPrimary: true
         });
         renderFormContacts();
+        appliedChanges = true;
       }
       
-      showAiStatus('✅ AI lookup complete! Review and edit if needed.', 'success');
-      logActivity(`AI lookup completed for ${businessName}`);
+      // Show appropriate status based on confidence and warnings
+      if (result.warning) {
+        showAiStatus(`⚠️ ${result.warning}`, 'warning');
+      } else if (data.confidence === 'low') {
+        showAiStatus(`⚠️ Low confidence result - please verify${data.source ? ` (source: ${data.source})` : ''}`, 'warning');
+      } else if (data.confidence === 'medium') {
+        showAiStatus(`✅ Data extracted - verify if needed${data.source ? ` (${data.source})` : ''}`, 'success');
+      } else {
+        showAiStatus(`✅ Data extracted from Google!${data.source ? ` (${data.source})` : ''}`, 'success');
+      }
+      logActivity(`Business lookup completed for ${businessName}${appliedChanges ? '' : ' (no new fields applied)'}`);
+    } else if (result.error === 'Window closed') {
+      // User cancelled - just hide the status
+      showAiStatus('', '');
+      elements.aiStatus.classList.add('hidden');
     } else {
       showAiStatus(`⚠️ ${result.error || 'Could not find business info'}`, 'error');
     }
@@ -969,6 +993,7 @@ function closeSettingsModal() {
 async function handleSaveSettings() {
   const config = {
     deepseekApiKey: elements.deepseekApiKey.value.trim(),
+    defaultLocation: elements.defaultLocation.value.trim(),
     defaultZipcode: elements.defaultZipcode.value.trim()
   };
   

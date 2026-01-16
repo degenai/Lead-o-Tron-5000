@@ -90,6 +90,35 @@ describe('DeepSeek API Integration', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
+    test('should include thinking enabled in request body', async () => {
+      const expectedThinking = { type: 'enabled' };
+
+      mockFetch.mockImplementation((url, options) => {
+        const body = JSON.parse(options.body);
+
+        expect(body.thinking).toBeDefined();
+        expect(body.thinking).toEqual(expectedThinking);
+
+        return createMockResponse(200, {
+          choices: [{
+            message: { content: '{}' }
+          }]
+        });
+      });
+
+      await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: [],
+          thinking: { type: 'enabled' }
+        })
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
     test('should return 400 error when using incorrect tools format', async () => {
       // This test documents what happens with the WRONG format
       // to prevent regression

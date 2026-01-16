@@ -4,6 +4,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const { v4: uuidv4 } = require('uuid');
 const { normalizeLeadsData } = require('./data-normalizer');
+const { buildDeepseekRequestBody, parseDeepseekContent, buildParseRequestBody } = require('./deepseek-utils');
 
 // Data file paths
 const userDataPath = app.getPath('userData');
@@ -11,6 +12,8 @@ const leadsFilePath = path.join(userDataPath, 'leads.json');
 const configFilePath = path.join(userDataPath, 'config.json');
 
 let mainWindow;
+let lookupWindow = null;
+let pendingLookupResolve = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -23,7 +26,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      spellcheck: false
     },
     backgroundColor: '#0d5c2e'
   });
@@ -89,7 +93,7 @@ async function loadConfig() {
   } catch (error) {
     console.error('Error loading config:', error);
   }
-  return { deepseekApiKey: '', defaultZipcode: '' };
+  return { deepseekApiKey: '', defaultZipcode: '', defaultLocation: '' };
 }
 
 async function saveConfig(config) {
@@ -198,7 +202,6 @@ ipcMain.handle('delete-lead', async (event, leadId) => {
   const leadIndex = data.leads.findIndex(l => l.id === leadId);
   
   if (leadIndex !== -1) {
-    const leadName = data.leads[leadIndex].name;
     data.leads.splice(leadIndex, 1);
     await saveLeads(data);
     return true;
@@ -281,80 +284,56 @@ ipcMain.handle('get-data-path', async () => {
   return leadsFilePath;
 });
 
-// DeepSeek API lookup with web search
+// @DEPRECATED: DeepSeek API lookup with web search
+// This method is unreliable - use 'open-lookup-window' instead for BrowserView-powered lookup
+// Kept for backward compatibility only
 ipcMain.handle('deepseek-lookup', async (event, businessName, existingNeighborhoods = []) => {
+  console.warn('DEPRECATED: deepseek-lookup is unreliable. Use open-lookup-window instead.');
   const config = await loadConfig();
   
   if (!config.deepseekApiKey) {
     return { success: false, error: 'API key not configured' };
   }
   
-  // Build context with zipcode and neighborhoods
-  const zipcode = config.defaultZipcode || '';
-  const neighborhoodList = existingNeighborhoods.length > 0 
-    ? existingNeighborhoods.join(', ') 
-    : 'none defined yet';
-  
-  const locationContext = zipcode 
-    ? `near zipcode ${zipcode}` 
-    : '';
-  
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const requestBody = buildDeepseekRequestBody({
+      businessName,
+      existingNeighborhoods,
+      zipcode: config.defaultZipcode || '',
+      location: config.defaultLocation || ''
+    });
+
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.deepseekApiKey}`
       },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a helpful assistant that looks up local business information. Use web search to find accurate, current information.
-
-Return ONLY valid JSON with no markdown formatting or code blocks. Return this exact structure:
-{
-  "correctName": "the official/correct business name with proper spelling, accents, capitalization (e.g., Sucré not Sucre)",
-  "address": "full street address or empty string",
-  "neighborhood": "area/district name - PREFER choosing from existing neighborhoods if applicable",
-  "phone": "business phone number or empty string",
-  "businessType": "type of business or empty string",
-  "isNewNeighborhood": true/false (true only if you're suggesting a neighborhood not in the existing list)
-}
-
-IMPORTANT: If you find the official business name has different spelling (accents, capitalization, etc.), return it in "correctName". Example: user types "sucre" but official name is "Sucré".
-
-EXISTING NEIGHBORHOODS (prefer these): ${neighborhoodList}
-
-Only suggest a new neighborhood if the business location clearly doesn't fit any existing ones.`
-          },
-          {
-            role: 'user',
-            content: `Look up business information for: "${businessName}" ${locationContext}. Search the web for current address, phone number, and location details. If you cannot find specific information, return empty strings for those fields. Return only the JSON object.`
-          }
-        ],
-        web_search: { enable: true },
-        temperature: 0.3,
-        max_tokens: 500
-      })
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
     
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
     
     const result = await response.json();
-    const content = result.choices[0]?.message?.content || '{}';
+    const content = result.choices[0]?.message?.content || '';
     
     // Try to parse the response as JSON
     try {
-      const businessInfo = JSON.parse(content.replace(/```json\n?|\n?```/g, '').trim());
-      return { success: true, data: businessInfo };
+      const { data, warning } = parseDeepseekContent(content);
+      return { success: true, data, warning };
     } catch (parseError) {
       return { success: false, error: 'Could not parse AI response' };
     }
   } catch (error) {
+    if (error.name === 'AbortError') {
+      return { success: false, error: 'Request timed out' };
+    }
     return { success: false, error: error.message };
   }
 });
@@ -364,6 +343,189 @@ ipcMain.handle('add-activity-log', async (event, message) => {
   addActivityLog(data, message);
   await saveLeads(data);
   return true;
+});
+
+// ============ BROWSERVIEW LOOKUP SYSTEM ============
+
+// Open the lookup window with embedded Google search
+ipcMain.handle('open-lookup-window', async (event, businessName, location) => {
+  return new Promise((resolve) => {
+    // Close existing lookup window if any
+    if (lookupWindow && !lookupWindow.isDestroyed()) {
+      lookupWindow.close();
+    }
+
+    // Store the resolve function to call when we get results
+    pendingLookupResolve = resolve;
+
+    // Build the search query
+    const query = `${businessName} ${location}`.trim();
+    const searchParams = new URLSearchParams({
+      business: businessName,
+      location: location
+    });
+
+    // Create the lookup window
+    lookupWindow = new BrowserWindow({
+      width: 900,
+      height: 700,
+      parent: mainWindow,
+      modal: false,
+      title: 'Business Lookup - Lead-o-Tron 5000',
+      webPreferences: {
+        preload: path.join(__dirname, 'lookup-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: true  // Enable webview tag
+      },
+      backgroundColor: '#1a1a2e'
+    });
+
+    // Load the lookup window HTML with query parameters
+    lookupWindow.loadFile('lookup-window.html', {
+      query: {
+        business: businessName,
+        location: location
+      }
+    });
+
+    // Handle window closed without extracting
+    lookupWindow.on('closed', () => {
+      lookupWindow = null;
+      if (pendingLookupResolve) {
+        pendingLookupResolve({ success: false, error: 'Window closed' });
+        pendingLookupResolve = null;
+      }
+    });
+  });
+});
+
+// Handle extracted data from lookup window
+ipcMain.on('lookup-extracted-data', async (event, extractedData) => {
+  if (!pendingLookupResolve) return;
+
+  const config = await loadConfig();
+  
+  // Send status update to lookup window
+  if (lookupWindow && !lookupWindow.isDestroyed()) {
+    lookupWindow.webContents.send('lookup-status', '🤖', 'Parsing with AI...', 'loading');
+  }
+
+  try {
+    // Check if we have any useful structured data (name, address, or phone)
+    const hasStructuredData = extractedData.name || extractedData.address || extractedData.phone;
+    const hasRawText = extractedData.rawText;
+
+    if (!hasStructuredData && !hasRawText) {
+      throw new Error('No business information found on page');
+    }
+
+    // If we have ANY structured data, use it directly (don't require both name AND address)
+    if (hasStructuredData) {
+      // Determine confidence based on what we found
+      let confidence = 'high';
+      if (!extractedData.address) {
+        confidence = 'medium'; // No address = medium confidence
+      }
+      if (!extractedData.name && !extractedData.address) {
+        confidence = 'low'; // Only phone = low confidence
+      }
+
+      const result = {
+        success: true,
+        data: {
+          correctName: extractedData.name || '',
+          address: extractedData.address || '',
+          phone: extractedData.phone || '',
+          hours: extractedData.hours || '',
+          businessType: extractedData.businessType || '',
+          rating: extractedData.rating || '',
+          reviewCount: extractedData.reviewCount || '',
+          website: extractedData.website || '',
+          confidence,
+          source: 'Google Knowledge Panel'
+        },
+        // Add warning if address was not found
+        warning: !extractedData.address ? 'Address not found - you may need to enter it manually' : undefined
+      };
+
+      // Close the lookup window
+      if (lookupWindow && !lookupWindow.isDestroyed()) {
+        lookupWindow.webContents.send('lookup-status', '✅', 'Data extracted!', 'success');
+        setTimeout(() => {
+          if (lookupWindow && !lookupWindow.isDestroyed()) {
+            lookupWindow.close();
+          }
+        }, 500);
+      }
+
+      pendingLookupResolve(result);
+      pendingLookupResolve = null;
+      return;
+    }
+
+    // Use DeepSeek to parse the raw text if we don't have structured data
+    if (!config.deepseekApiKey) {
+      throw new Error('API key not configured - cannot parse extracted text');
+    }
+
+    const requestBody = buildParseRequestBody(extractedData.rawText || JSON.stringify(extractedData));
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.deepseekApiKey}`
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const apiResult = await response.json();
+    const content = apiResult.choices[0]?.message?.content || '';
+    const { data, warning } = parseDeepseekContent(content);
+
+    // Add source info
+    data.source = 'Google Knowledge Panel (AI parsed)';
+    data.confidence = data.address ? 'high' : 'medium';
+
+    // Close the lookup window
+    if (lookupWindow && !lookupWindow.isDestroyed()) {
+      lookupWindow.webContents.send('lookup-status', '✅', 'Data parsed!', 'success');
+      setTimeout(() => {
+        if (lookupWindow && !lookupWindow.isDestroyed()) {
+          lookupWindow.close();
+        }
+      }, 500);
+    }
+
+    pendingLookupResolve({ success: true, data, warning });
+    pendingLookupResolve = null;
+
+  } catch (error) {
+    // Send error to lookup window
+    if (lookupWindow && !lookupWindow.isDestroyed()) {
+      lookupWindow.webContents.send('lookup-status', '❌', error.message, 'error');
+    }
+
+    pendingLookupResolve({ success: false, error: error.message });
+    pendingLookupResolve = null;
+  }
+});
+
+// Handle cancel from lookup window
+ipcMain.on('lookup-cancel', () => {
+  if (lookupWindow && !lookupWindow.isDestroyed()) {
+    lookupWindow.close();
+  }
 });
 
 // ============ CONTACT MANAGEMENT ============

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';">
+  <title>Business Lookup - Lead-o-Tron 5000</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      background: linear-gradient(135deg, #0d5c2e 0%, #1a8b4c 100%);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 2px solid #0a4a24;
+      flex-shrink: 0;
+    }
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .toolbar-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .search-query {
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .toolbar-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-extract {
+      background: #ffd700;
+      color: #1a1a2e;
+    }
+
+    .btn-extract:hover {
+      background: #ffed4a;
+      transform: translateY(-1px);
+    }
+
+    .btn-extract:disabled {
+      background: #666;
+      color: #999;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-cancel {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .btn-cancel:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    .status-bar {
+      background: #16213e;
+      padding: 8px 16px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+    }
+
+    .status-icon {
+      font-size: 14px;
+    }
+
+    .status-text {
+      color: #aaa;
+    }
+
+    .status-text.loading {
+      color: #ffd700;
+    }
+
+    .status-text.success {
+      color: #4ade80;
+    }
+
+    .status-text.error {
+      color: #f87171;
+    }
+
+    .webview-container {
+      flex: 1;
+      background: #fff;
+      position: relative;
+    }
+
+    webview {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(26, 26, 46, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 100;
+    }
+
+    .loading-overlay.hidden {
+      display: none;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(255, 215, 0, 0.2);
+      border-top-color: #ffd700;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      color: #ffd700;
+      font-size: 14px;
+    }
+
+    .help-text {
+      background: rgba(255, 215, 0, 0.1);
+      border: 1px solid rgba(255, 215, 0, 0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 0 16px;
+      font-size: 12px;
+      color: #ffd700;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span class="toolbar-title">Business Lookup</span>
+      <span class="search-query" id="searchQuery">Searching...</span>
+    </div>
+    <div class="toolbar-buttons">
+      <button class="btn btn-extract" id="extractBtn" disabled>
+        <span>Extract Data</span>
+      </button>
+      <button class="btn btn-cancel" id="cancelBtn">
+        <span>Cancel</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="status-icon" id="statusIcon">🔍</span>
+    <span class="status-text" id="statusText">Loading Google search...</span>
+  </div>
+
+  <div class="webview-container">
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">Loading search results...</div>
+    </div>
+    <webview id="googleWebview" partition="persist:google"></webview>
+  </div>
+
+  <script src="lookup-renderer.js"></script>
+</body>
+</html>

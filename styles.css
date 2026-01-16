@@ -947,6 +947,11 @@ body {
   color: var(--success);
 }
 
+.ai-status.warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
 .ai-status.error {
   background: rgba(239, 68, 68, 0.2);
   color: var(--danger);

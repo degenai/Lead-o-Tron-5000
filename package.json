@@ -18,10 +18,14 @@
   "author": "Alex - The People's Elbow",
   "license": "MIT",
   "devDependencies": {
+    "dotenv": "^17.2.3",
     "electron": "^33.0.0",
     "jest": "^30.2.0"
   },
   "dependencies": {
+    "puppeteer": "^24.35.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "uuid": "^11.0.0"
   }
 }
