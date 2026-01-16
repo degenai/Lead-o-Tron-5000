@@ -36,9 +36,18 @@ Reception indicators:
 - Full-text search
 
 ### AI Integration (DeepSeek)
-- Auto-fill address and neighborhood for new businesses
+- **Web Search enabled** - AI searches the web for current business info
+- Auto-fill address, neighborhood, and phone number
+- Smart neighborhood matching - prefers your existing neighborhoods
+- Configure your local zipcode for better local business detection
 - AI-enhanced fields are clearly marked
 - Works offline (AI features gracefully degrade)
+
+### Multiple Contacts per Location
+- Track multiple people at each business
+- Designate one contact as "Primary" (shown prominently)
+- Expandable list to view additional contacts
+- Full contact info: name, role, phone, email
 
 ### Data Management
 - Auto-save on every change
@@ -83,10 +92,10 @@ Your data is stored in:
 - **macOS**: `~/Library/Application Support/lead-o-tron-5000/leads.json`
 - **Linux**: `~/.config/lead-o-tron-5000/leads.json`
 
-### API Key Setup
+### Settings
 1. Click the ⚙️ settings button
-2. Enter your DeepSeek API key
-3. Get a key at: https://platform.deepseek.com
+2. Enter your DeepSeek API key (get one at: https://platform.deepseek.com)
+3. Enter your local zipcode (helps AI find nearby businesses)
 
 ## Data Model
 
@@ -96,10 +105,16 @@ Your data is stored in:
   "name": "Business Name",
   "address": "Full address",
   "neighborhood": "Area/district",
-  "contactName": "Person I talked to",
-  "contactRole": "Their role",
-  "phone": "optional",
-  "email": "optional",
+  "contacts": [
+    {
+      "id": "uuid",
+      "name": "Person I talked to",
+      "role": "Their role",
+      "phone": "optional",
+      "email": "optional",
+      "isPrimary": true
+    }
+  ],
   "visits": [
     {
       "date": "ISO date",

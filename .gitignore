@@ -1,10 +1,9 @@
 # Dependencies
 node_modules/
 
-# Electron build output
+# Build outputs
 dist/
 out/
-build/
 
 # Logs
 *.log
@@ -15,10 +14,24 @@ npm-debug.log*
 Thumbs.db
 
 # IDE
-.idea/
 .vscode/
-*.swp
-*.swo
+.idea/
 
-# Environment/config (contains API keys)
-# Note: config.json is in user's AppData, not in repo
+# Environment/secrets
+.env
+.env.local
+config.json
+
+# User data backups
+leads-backup.json
+leads-backup*.json
+*.backup.json
+
+# Test coverage
+coverage/
+
+# Electron build cache
+.cache/
+
+# Debug logs
+.cursor/
