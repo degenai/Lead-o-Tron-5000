@@ -703,6 +703,33 @@ body {
   font-style: italic;
 }
 
+/* Visit Actions */
+.visit-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.btn-icon-sm {
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  opacity: 0.6;
+  transition: all 0.15s ease;
+}
+
+.btn-icon-sm:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-icon-sm.btn-danger-subtle:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
 .add-visit-btn {
   width: 100%;
   margin-top: var(--space-sm);
@@ -801,6 +828,63 @@ body {
 
 .modal-content.modal-sm {
   width: 450px;
+}
+
+/* Danger Modal Styles */
+.modal-content.modal-danger {
+  border: 2px solid var(--danger);
+}
+
+.modal-danger .modal-header h2 {
+  color: var(--danger);
+}
+
+.delete-warning {
+  color: var(--danger);
+  font-weight: 600;
+  margin-bottom: var(--space-md);
+}
+
+.delete-preview {
+  background: var(--bg-dark);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  border-left: 3px solid var(--danger);
+}
+
+.delete-preview-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+}
+
+.delete-preview-notes {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border: none;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+/* Shake animation for delete warning */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+.shake {
+  animation: shake 0.5s ease-in-out;
 }
 
 .modal-header {
@@ -1255,4 +1339,133 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* ============================================
+   ANIMATION INITIAL STATES
+   ============================================ */
+
+/* Stat cards start slightly smaller for entrance animation */
+body.page-loading .stat-card {
+  opacity: 0.5;
+  transform: scale(0.9);
+}
+
+/* Lead card animation states */
+.lead-card.anim-enter {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+/* Modal animation states */
+.modal .modal-content.anim-init {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+/* Hover lift effect for cards */
+.lead-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lead-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   MICRO-INTERACTIONS
+   ============================================ */
+
+/* Button hover and press feedback */
+.btn {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.btn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary:hover {
+  background: var(--pe-green-light);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Icon buttons micro-feedback */
+.btn-icon {
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.btn-icon:hover {
+  transform: scale(1.1);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-icon:active {
+  transform: scale(0.95);
+}
+
+/* Status badge color transitions */
+.status-badge {
+  transition: background 0.3s ease, color 0.3s ease, transform 0.15s ease;
+}
+
+.status-badge:hover {
+  transform: scale(1.05);
+}
+
+/* Score slider value pop */
+.score-value {
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.score-value.pop {
+  transform: scale(1.3);
+  color: var(--pe-gold);
+}
+
+/* Slider thumb animation */
+input[type="range"]::-webkit-slider-thumb {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(255, 199, 44, 0.5);
+}
+
+/* Toast notification slide */
+.toast {
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+}
+
+.toast.show {
+  transform: translateX(0);
+}
+
+/* Checkbox check mark animation */
+input[type="checkbox"]:checked + label::before {
+  animation: checkPop 0.2s ease;
+}
+
+@keyframes checkPop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Input focus glow */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 199, 44, 0.3);
+  transition: box-shadow 0.2s ease;
 }

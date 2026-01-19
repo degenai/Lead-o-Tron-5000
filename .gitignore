@@ -27,6 +27,10 @@ leads-backup.json
 leads-backup*.json
 *.backup.json
 
+# Route notes exports (contain sensitive lead info)
+route-notes-*.html
+route-notes.html
+
 # Test coverage
 coverage/
 

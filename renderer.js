@@ -3,6 +3,154 @@
 // The People's Elbow CRM
 // ============================================
 
+// ============================================
+// ANIME.JS SETUP & UTILITIES
+// anime.js v4 is loaded via script tag as window.anime
+// ============================================
+
+// Verify anime.js is loaded
+if (typeof anime === 'undefined') {
+  console.error('anime.js not loaded! Check lib/anime.min.js');
+  // Create no-op fallback that won't break the app
+  window.anime = {
+    animate: (targets, props) => ({ 
+      pause: () => {}, 
+      play: () => {},
+      finished: Promise.resolve()
+    }),
+    stagger: (val, opts) => 0,
+    set: (targets, props) => {
+      // Actually set the final values so elements are visible
+      const els = typeof targets === 'string' ? document.querySelectorAll(targets) : 
+                  targets instanceof NodeList ? targets :
+                  targets ? [targets] : [];
+      els.forEach(el => {
+        if (!el) return;
+        if (props.opacity !== undefined) el.style.opacity = props.opacity;
+        if (props.scale !== undefined || props.translateX !== undefined || props.translateY !== undefined) {
+          el.style.transform = 'none';
+        }
+      });
+    },
+    timeline: () => ({ add: () => ({}) })
+  };
+}
+
+/**
+ * Animation helper for counter animations
+ */
+function animateCounter(element, targetValue, options = {}) {
+  const startValue = options.startValue || 0;
+  const duration = options.duration || 800;
+  const counter = { value: startValue };
+  
+  return anime.animate(counter, {
+    value: targetValue,
+    duration,
+    ease: 'outExpo',
+    onUpdate: () => {
+      element.textContent = Math.round(counter.value);
+    }
+  });
+}
+
+/**
+ * Shake animation for warnings/errors
+ */
+function shakeElement(element) {
+  return anime.animate(element, {
+    translateX: [-5, 5, -5, 5, -3, 3, 0],
+    duration: 400,
+    ease: 'easeInOutSine'
+  });
+}
+
+/**
+ * Animate modal open with spring/bounce effect
+ */
+function animateModalOpen(modalElement) {
+  const content = modalElement.querySelector('.modal-content');
+  modalElement.classList.remove('hidden');
+  
+  // Backdrop fade in
+  anime.set(modalElement, { opacity: 0 });
+  anime.animate(modalElement, {
+    opacity: [0, 1],
+    duration: 200,
+    ease: 'outQuad'
+  });
+  
+  // Content scale up with spring
+  if (content) {
+    anime.set(content, { opacity: 0, scale: 0.9, translateY: -20 });
+    anime.animate(content, {
+      opacity: [0, 1],
+      scale: [0.9, 1],
+      translateY: [-20, 0],
+      duration: 400,
+      ease: 'outBack'
+    });
+  }
+}
+
+/**
+ * Animate modal close with ease out
+ */
+async function animateModalClose(modalElement) {
+  const content = modalElement.querySelector('.modal-content');
+  
+  // Animate content out first
+  if (content) {
+    anime.animate(content, {
+      opacity: [1, 0],
+      scale: [1, 0.95],
+      duration: 200,
+      ease: 'inQuad'
+    });
+  }
+  
+  // Backdrop fade out
+  await anime.animate(modalElement, {
+    opacity: [1, 0],
+    duration: 200,
+    ease: 'inQuad'
+  }).finished;
+  
+  modalElement.classList.add('hidden');
+  // Reset for next open
+  anime.set(modalElement, { opacity: 1 });
+  if (content) anime.set(content, { opacity: 1, scale: 1, translateY: 0 });
+}
+
+/**
+ * Page load entrance animation - simple, non-blocking
+ * Only animates stats cards - keeps everything else visible
+ */
+function runPageLoadAnimation() {
+  // Remove the loading class immediately so content is visible
+  document.body.classList.remove('page-loading');
+  
+  try {
+    if (typeof anime === 'undefined' || !anime.animate) {
+      return;
+    }
+    
+    // Only animate the stat cards - simple and reliable
+    const statCards = document.querySelectorAll('.stat-card');
+    if (statCards.length > 0) {
+      anime.animate(statCards, {
+        scale: [0.9, 1],
+        opacity: [0.5, 1],
+        duration: 400,
+        delay: anime.stagger(80),
+        ease: 'outBack'
+      });
+    }
+  } catch (err) {
+    console.error('Page load animation error:', err);
+  }
+}
+
 // State
 let leads = [];
 let activityLog = [];
@@ -97,6 +245,19 @@ const elements = {
   visitNotes: document.getElementById('visitNotes'),
   visitReception: document.getElementById('visitReception'),
   visitLeadId: document.getElementById('visitLeadId'),
+  visitIndex: document.getElementById('visitIndex'),
+  visitModalTitle: document.getElementById('visitModalTitle'),
+  visitSubmitBtn: document.getElementById('visitSubmitBtn'),
+  
+  // Delete Visit Modal
+  deleteVisitModal: document.getElementById('deleteVisitModal'),
+  closeDeleteVisitBtn: document.getElementById('closeDeleteVisitBtn'),
+  cancelDeleteVisitBtn: document.getElementById('cancelDeleteVisitBtn'),
+  confirmDeleteVisitBtn: document.getElementById('confirmDeleteVisitBtn'),
+  deleteVisitDate: document.getElementById('deleteVisitDate'),
+  deleteVisitNotes: document.getElementById('deleteVisitNotes'),
+  deleteVisitLeadId: document.getElementById('deleteVisitLeadId'),
+  deleteVisitIndex: document.getElementById('deleteVisitIndex'),
   
   // Settings Modal
   settingsModal: document.getElementById('settingsModal'),
@@ -119,7 +280,7 @@ const elements = {
 async function init() {
   await loadData();
   setupEventListeners();
-  renderLeadList();
+  renderLeadList(); // Page load animation handles this
   renderActivityLog();
   updateStats();
   updateNeighborhoodFilter();
@@ -136,6 +297,11 @@ async function init() {
   elements.defaultZipcode.value = config.defaultZipcode || '';
   
   logActivity('Lead-o-Tron 5000 initialized. Ready to track leads! 💪');
+  
+  // Run page load entrance animation
+  requestAnimationFrame(() => {
+    runPageLoadAnimation();
+  });
 }
 
 async function loadData() {
@@ -207,6 +373,11 @@ function setupEventListeners() {
   elements.cancelVisitModalBtn.addEventListener('click', closeVisitModal);
   elements.visitForm.addEventListener('submit', handleVisitSubmit);
   
+  // Delete Visit Modal
+  elements.closeDeleteVisitBtn.addEventListener('click', closeDeleteVisitModal);
+  elements.cancelDeleteVisitBtn.addEventListener('click', closeDeleteVisitModal);
+  elements.confirmDeleteVisitBtn.addEventListener('click', handleDeleteVisitConfirm);
+  
   // Settings Modal
   elements.closeSettingsModalBtn.addEventListener('click', closeSettingsModal);
   elements.saveSettingsBtn.addEventListener('click', handleSaveSettings);
@@ -241,6 +412,24 @@ function handleDetailContentClick(event) {
   const visitButton = event.target.closest('[data-action="open-visit-modal"]');
   if (visitButton && visitButton.dataset.leadId) {
     openVisitModal(visitButton.dataset.leadId);
+    return;
+  }
+
+  // Edit visit button
+  const editVisitBtn = event.target.closest('[data-action="edit-visit"]');
+  if (editVisitBtn) {
+    const leadId = editVisitBtn.dataset.leadId;
+    const visitIndex = parseInt(editVisitBtn.dataset.visitIndex, 10);
+    openVisitModal(leadId, visitIndex);
+    return;
+  }
+
+  // Delete visit button
+  const deleteVisitBtn = event.target.closest('[data-action="delete-visit"]');
+  if (deleteVisitBtn) {
+    const leadId = deleteVisitBtn.dataset.leadId;
+    const visitIndex = parseInt(deleteVisitBtn.dataset.visitIndex, 10);
+    openDeleteVisitConfirmation(leadId, visitIndex);
     return;
   }
 
@@ -389,15 +578,22 @@ function renderDetailPanel(lead) {
       <h3>Visit History (${lead.visits.length})</h3>
       ${lead.visits.length === 0 ? 
         '<p style="color: var(--text-muted); font-style: italic;">No visits logged yet</p>' :
-        lead.visits.slice().reverse().map(visit => `
-          <div class="visit-item">
+        lead.visits.slice().reverse().map((visit, reverseIndex) => {
+          // Calculate original index (visits are reversed for display - newest first)
+          const originalIndex = lead.visits.length - 1 - reverseIndex;
+          return `
+          <div class="visit-item" data-visit-index="${originalIndex}">
             <div class="visit-header">
               <span class="visit-date">${formatDate(visit.date)}</span>
-              <span class="visit-reception">${getReceptionEmoji(visit.reception)} ${visit.reception}</span>
+              <div class="visit-actions">
+                <button class="btn-icon-sm" data-action="edit-visit" data-lead-id="${lead.id}" data-visit-index="${originalIndex}" title="Edit visit">✏️</button>
+                <button class="btn-icon-sm btn-danger-subtle" data-action="delete-visit" data-lead-id="${lead.id}" data-visit-index="${originalIndex}" title="Delete visit">🗑️</button>
+                <span class="visit-reception">${getReceptionEmoji(visit.reception)} ${visit.reception}</span>
+              </div>
             </div>
             <div class="visit-notes ${!visit.notes ? 'empty' : ''}">${escapeHtml(visit.notes) || 'No notes'}</div>
           </div>
-        `).join('')
+        `}).join('')
       }
       <button class="btn btn-primary add-visit-btn" data-action="open-visit-modal" data-lead-id="${lead.id}">
         + Log New Visit
@@ -541,20 +737,115 @@ function updateNeighborhoodSelect() {
 // ============================================
 
 function selectLead(leadId) {
+  const wasHidden = elements.detailPanel.classList.contains('hidden');
   selectedLeadId = leadId;
   const lead = leads.find(l => l.id === leadId);
   
   if (lead) {
     elements.detailPanel.classList.remove('hidden');
     renderDetailPanel(lead);
-    renderLeadList(); // Update selection state
+    
+    // Update selection state WITHOUT re-rendering the entire list
+    updateLeadSelection(leadId);
+    
+    // Animate detail panel opening
+    if (wasHidden) {
+      anime.set(elements.detailPanel, { opacity: 0, translateX: 20 });
+      anime.animate(elements.detailPanel, {
+        opacity: [0, 1],
+        translateX: [20, 0],
+        duration: 350,
+        ease: 'outQuad'
+      });
+    }
+    
+    // Animate detail panel content
+    animateDetailContent();
+    
+    // Animate the selected card with a subtle pulse
+    const selectedCard = document.querySelector(`.lead-card[data-id="${leadId}"]`);
+    if (selectedCard) {
+      anime.animate(selectedCard, {
+        scale: [1, 1.02, 1],
+        duration: 300,
+        ease: 'outQuad'
+      });
+    }
   }
 }
 
-function closeDetailPanel() {
+/**
+ * Update lead selection state without re-rendering the entire list
+ */
+function updateLeadSelection(selectedId) {
+  const cards = elements.leadList.querySelectorAll('.lead-card');
+  cards.forEach(card => {
+    if (card.dataset.id === selectedId) {
+      card.classList.add('selected');
+    } else {
+      card.classList.remove('selected');
+    }
+  });
+}
+
+function animateDetailContent() {
+  // Animate score sliders
+  const scoreSliders = elements.detailPanel.querySelectorAll('.score-bar-fill');
+  scoreSliders.forEach((slider, index) => {
+    const width = slider.style.width;
+    slider.style.width = '0';
+    anime.animate(slider, {
+      width: [0, width],
+      duration: 400,
+      delay: index * 100,
+      ease: 'outQuad'
+    });
+  });
+  
+  // Animate visit items with stagger
+  const visitItems = elements.detailPanel.querySelectorAll('.visit-item');
+  if (visitItems.length > 0) {
+    anime.set(visitItems, { opacity: 0, translateY: 10 });
+    anime.animate(visitItems, {
+      opacity: [0, 1],
+      translateY: [10, 0],
+      duration: 300,
+      delay: anime.stagger(50),
+      ease: 'outQuad'
+    });
+  }
+  
+  // Animate contact cards
+  const contactCards = elements.detailPanel.querySelectorAll('.contact-card, .other-contact-card');
+  if (contactCards.length > 0) {
+    anime.set(contactCards, { opacity: 0, scale: 0.95 });
+    anime.animate(contactCards, {
+      opacity: [0, 1],
+      scale: [0.95, 1],
+      duration: 300,
+      delay: anime.stagger(60),
+      ease: 'outQuad'
+    });
+  }
+}
+
+async function closeDetailPanel() {
   selectedLeadId = null;
+  
+  // Animate out before hiding
+  await anime.animate(elements.detailPanel, {
+    opacity: [1, 0],
+    translateX: [0, 20],
+    duration: 250,
+    ease: 'inQuad'
+  }).finished;
+  
   elements.detailPanel.classList.add('hidden');
-  renderLeadList();
+  // Reset transform after hiding
+  anime.set(elements.detailPanel, { opacity: 1, translateX: 0 });
+  
+  // Clear selection without re-rendering entire list
+  updateLeadSelection(null);
 }
 
 // Track contacts being edited in the form
@@ -595,7 +886,7 @@ function openLeadModal(lead = null) {
   renderFormContacts();
   updateScoreDisplay();
   updateNeighborhoodSelect();
-  elements.leadModal.classList.remove('hidden');
+  animateModalOpen(elements.leadModal);
   elements.leadName.focus();
 }
 
@@ -743,8 +1034,8 @@ function renderContactsSection(lead) {
   return html;
 }
 
-function closeLeadModal() {
-  elements.leadModal.classList.add('hidden');
+async function closeLeadModal() {
+  await animateModalClose(elements.leadModal);
   elements.leadForm.reset();
   formContacts = []; // Clear contacts to prevent stale data on next open
   elements.aiStatus.classList.add('hidden'); // Hide any AI status messages
@@ -812,10 +1103,34 @@ async function handleLeadSubmit(e) {
     }
     
     logActivity(`Added new lead: ${newLead.name}`);
+    
+    // Animate the new lead card after render
+    closeLeadModal();
+    renderLeadList(); // We'll animate just the new card
+    
+    // Find and animate the new card
+    requestAnimationFrame(() => {
+      const newCard = document.querySelector(`.lead-card[data-id="${newLead.id}"]`);
+      if (newCard) {
+        anime.set(newCard, { opacity: 0, translateY: -30, scale: 0.95 });
+        anime.animate(newCard, {
+          opacity: [0, 1],
+          translateY: [-30, 0],
+          scale: [0.95, 1],
+          duration: 500,
+          ease: 'outBack'
+        });
+      }
+    });
+    
+    updateStats();
+    updateNeighborhoodFilter();
+    updateNeighborhoodSelect();
+    return;
   }
   
   closeLeadModal();
-  renderLeadList();
+  renderLeadList(); // Just an edit, no list change
   updateStats();
   updateNeighborhoodFilter();
   updateNeighborhoodSelect();
@@ -828,12 +1143,26 @@ async function handleDeleteLead() {
   if (!lead) return;
   
   if (confirm(`Are you sure you want to delete "${lead.name}"? This cannot be undone.`)) {
+    // Find the card and animate it out before removing
+    const cardToDelete = document.querySelector(`.lead-card[data-id="${selectedLeadId}"]`);
+    
+    if (cardToDelete) {
+      // Animate out with fade + collapse
+      await anime.animate(cardToDelete, {
+        opacity: [1, 0],
+        translateX: [0, -30],
+        scale: [1, 0.95],
+        duration: 300,
+        ease: 'inQuad'
+      }).finished;
+    }
+    
     await window.api.deleteLead(selectedLeadId);
     leads = leads.filter(l => l.id !== selectedLeadId);
     logActivity(`Deleted lead: ${lead.name}`);
     
     closeDetailPanel();
-    renderLeadList();
+    renderLeadList(); // Card already animated out
     updateStats();
     updateNeighborhoodFilter();
   }
@@ -843,46 +1172,145 @@ async function handleDeleteLead() {
 // VISIT OPERATIONS
 // ============================================
 
-function openVisitModal(leadId) {
+function openVisitModal(leadId, visitIndex = null) {
   elements.visitLeadId.value = leadId;
-  elements.visitDate.value = new Date().toISOString().slice(0, 16);
-  elements.visitNotes.value = '';
-  elements.visitReception.value = 'lukewarm';
-  elements.visitModal.classList.remove('hidden');
+  elements.visitIndex.value = visitIndex !== null ? visitIndex : '';
+  
+  const isEditMode = visitIndex !== null;
+  
+  if (isEditMode) {
+    // Edit mode - pre-fill with existing visit data
+    const lead = leads.find(l => l.id === leadId);
+    if (lead && lead.visits[visitIndex]) {
+      const visit = lead.visits[visitIndex];
+      elements.visitDate.value = new Date(visit.date).toISOString().slice(0, 16);
+      elements.visitNotes.value = visit.notes || '';
+      elements.visitReception.value = visit.reception || 'lukewarm';
+    }
+    elements.visitModalTitle.textContent = 'Edit Visit';
+    elements.visitSubmitBtn.textContent = 'Update Visit';
+  } else {
+    // Add mode - fresh form
+    elements.visitDate.value = new Date().toISOString().slice(0, 16);
+    elements.visitNotes.value = '';
+    elements.visitReception.value = 'lukewarm';
+    elements.visitModalTitle.textContent = 'Log Visit';
+    elements.visitSubmitBtn.textContent = 'Log Visit';
+  }
+  
+  animateModalOpen(elements.visitModal);
   elements.visitNotes.focus();
 }
 
-function closeVisitModal() {
-  elements.visitModal.classList.add('hidden');
+async function closeVisitModal() {
+  await animateModalClose(elements.visitModal);
   elements.visitForm.reset();
+  // Reset to add mode state
+  elements.visitIndex.value = '';
+  elements.visitModalTitle.textContent = 'Log Visit';
+  elements.visitSubmitBtn.textContent = 'Log Visit';
 }
 
 async function handleVisitSubmit(e) {
   e.preventDefault();
   
   const leadId = elements.visitLeadId.value;
+  const visitIndexStr = elements.visitIndex.value;
+  const isEditMode = visitIndexStr !== '';
+  
   const visitData = {
     date: new Date(elements.visitDate.value).toISOString(),
     notes: elements.visitNotes.value.trim(),
     reception: elements.visitReception.value
   };
   
-  const updated = await window.api.addVisit(leadId, visitData);
+  let updated;
+  if (isEditMode) {
+    // Update existing visit
+    const visitIndex = parseInt(visitIndexStr, 10);
+    updated = await window.api.updateVisit(leadId, visitIndex, visitData);
+    if (updated) {
+      logActivity(`Updated visit for ${updated.name}`);
+    }
+  } else {
+    // Add new visit
+    updated = await window.api.addVisit(leadId, visitData);
+    if (updated) {
+      logActivity(`Logged visit to ${updated.name}`);
+    }
+  }
+  
   if (updated) {
     const index = leads.findIndex(l => l.id === updated.id);
     if (index !== -1) leads[index] = updated;
-    
-    logActivity(`Logged visit to ${updated.name}`);
     
     if (selectedLeadId === updated.id) {
       renderDetailPanel(updated);
     }
     
-    renderLeadList();
+    renderLeadList(); // Just data update, no filter change
     updateStats();
   }
   
   closeVisitModal();
+}
+
+// Delete Visit Confirmation
+function openDeleteVisitConfirmation(leadId, visitIndex) {
+  const lead = leads.find(l => l.id === leadId);
+  if (!lead || !lead.visits[visitIndex]) return;
+  
+  const visit = lead.visits[visitIndex];
+  
+  // Store the IDs for the confirmation handler
+  elements.deleteVisitLeadId.value = leadId;
+  elements.deleteVisitIndex.value = visitIndex;
+  
+  // Show preview of what's being deleted
+  elements.deleteVisitDate.textContent = formatDate(visit.date);
+  elements.deleteVisitNotes.textContent = visit.notes || 'No notes';
+  
+  animateModalOpen(elements.deleteVisitModal);
+  
+  // Add additional shake warning after modal opens
+  setTimeout(() => {
+    const modalContent = elements.deleteVisitModal.querySelector('.modal-content');
+    shakeElement(modalContent);
+  }, 400);
+}
+
+async function closeDeleteVisitModal() {
+  await animateModalClose(elements.deleteVisitModal);
+  elements.deleteVisitLeadId.value = '';
+  elements.deleteVisitIndex.value = '';
+}
+
+async function handleDeleteVisitConfirm() {
+  const leadId = elements.deleteVisitLeadId.value;
+  const visitIndex = parseInt(elements.deleteVisitIndex.value, 10);
+  
+  if (!leadId || isNaN(visitIndex)) {
+    closeDeleteVisitModal();
+    return;
+  }
+  
+  const updated = await window.api.deleteVisit(leadId, visitIndex);
+  
+  if (updated) {
+    const index = leads.findIndex(l => l.id === updated.id);
+    if (index !== -1) leads[index] = updated;
+    
+    logActivity(`Deleted visit from ${updated.name}`);
+    
+    if (selectedLeadId === updated.id) {
+      renderDetailPanel(updated);
+    }
+    
+    renderLeadList(); // Just data update
+    updateStats();
+  }
+  
+  closeDeleteVisitModal();
 }
 
 // ============================================
@@ -987,11 +1415,11 @@ function showAiStatus(message, type) {
 // ============================================
 
 function openSettingsModal() {
-  elements.settingsModal.classList.remove('hidden');
+  animateModalOpen(elements.settingsModal);
 }
 
-function closeSettingsModal() {
-  elements.settingsModal.classList.add('hidden');
+async function closeSettingsModal() {
+  await animateModalClose(elements.settingsModal);
 }
 
 async function handleSaveSettings() {
@@ -1036,6 +1464,9 @@ async function handleImport() {
 // STATS
 // ============================================
 
+// Track previous stats for animations
+let prevStats = { total: 0, active: 0, converted: 0, due: 0 };
+
 function updateStats() {
   const total = leads.length;
   const active = leads.filter(l => l.status === 'active').length;
@@ -1046,13 +1477,40 @@ function updateStats() {
     return days >= 7;
   }).length;
   
-  elements.statTotal.textContent = total;
-  elements.statActive.textContent = active;
-  elements.statConverted.textContent = converted;
-  elements.statDue.textContent = due;
+  // Animate counters if values changed
+  if (total !== prevStats.total) {
+    animateCounter(elements.statTotal, total, { startValue: prevStats.total, duration: 600 });
+    pulseStatCard(elements.statTotal);
+  }
+  if (active !== prevStats.active) {
+    animateCounter(elements.statActive, active, { startValue: prevStats.active, duration: 600 });
+    pulseStatCard(elements.statActive);
+  }
+  if (converted !== prevStats.converted) {
+    animateCounter(elements.statConverted, converted, { startValue: prevStats.converted, duration: 600 });
+    pulseStatCard(elements.statConverted);
+  }
+  if (due !== prevStats.due) {
+    animateCounter(elements.statDue, due, { startValue: prevStats.due, duration: 600 });
+    pulseStatCard(elements.statDue);
+  }
+  
+  // Store for next comparison
+  prevStats = { total, active, converted, due };
   
   if (due > 0) {
     logActivity(`${due} lead${due > 1 ? 's' : ''} due for follow-up this week`, false);
+  }
+}
+
+function pulseStatCard(statElement) {
+  const card = statElement.closest('.stat-card');
+  if (card) {
+    anime.animate(card, {
+      scale: [1, 1.05, 1],
+      duration: 300,
+      ease: 'outQuad'
+    });
   }
 }
 
@@ -1088,7 +1546,7 @@ function logActivity(message, persist = true) {
 // SCORE DISPLAY
 // ============================================
 
-function updateScoreDisplay() {
+function updateScoreDisplay(event) {
   const space = parseInt(elements.scoreSpace.value);
   const traffic = parseInt(elements.scoreTraffic.value);
   const vibes = parseInt(elements.scoreVibes.value);
@@ -1098,6 +1556,29 @@ function updateScoreDisplay() {
   elements.trafficValue.textContent = traffic;
   elements.vibesValue.textContent = vibes;
   elements.totalScoreValue.textContent = total;
+  
+  // Pop animation on the changed value
+  if (event && event.target) {
+    let valueElement;
+    switch (event.target.id) {
+      case 'scoreSpace': valueElement = elements.spaceValue; break;
+      case 'scoreTraffic': valueElement = elements.trafficValue; break;
+      case 'scoreVibes': valueElement = elements.vibesValue; break;
+    }
+    if (valueElement) {
+      anime.animate(valueElement, {
+        scale: [1, 1.4, 1],
+        duration: 250,
+        ease: 'outBack'
+      });
+    }
+    // Also animate total
+    anime.animate(elements.totalScoreValue, {
+      scale: [1, 1.2, 1],
+      duration: 300,
+      ease: 'outQuad'
+    });
+  }
 }
 
 // ============================================

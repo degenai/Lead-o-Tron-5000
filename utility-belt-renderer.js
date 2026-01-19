@@ -1,130 +1,65 @@
-// Utility Belt Renderer with anime.js Animations
-// Note: In Electron renderer, we use require for node modules
+// Utility Belt Renderer with anime.js v4
+// anime.js is loaded via script tag as window.anime object
+// v4 API: anime.animate(), anime.stagger(), anime.set(), etc.
+
+// Verify anime.js is loaded
+if (typeof anime === 'undefined') {
+  console.error('anime.js not loaded! Check that lib/anime.min.js exists and is loaded before this script.');
+  // Fallback - create a no-op anime object to prevent crashes
+  window.anime = {
+    animate: (targets, props) => ({ pause: () => {}, play: () => {} }),
+    stagger: (val, opts) => 0,
+    set: (targets, props) => {}
+  };
+}
 
 // ============================================
-// ANIMATION UTILITIES (anime.js v4 style)
-// Since we can't use ES modules directly in Electron renderer,
-// we'll use a simple animation approach that mimics anime.js
+// ANIME.JS HELPERS
+// Wrapper functions for common animation patterns
 // ============================================
 
-const Animations = {
-  // Simple animation helper using CSS transitions + JS
-  animate(targets, props, options = {}) {
-    const elements = typeof targets === 'string' 
-      ? document.querySelectorAll(targets) 
-      : [targets].flat();
-    
-    const duration = options.duration || 500;
-    const delay = options.delay || 0;
-    const easing = options.easing || 'ease-out';
-    
-    return new Promise(resolve => {
-      elements.forEach((el, i) => {
-        const itemDelay = typeof delay === 'function' ? delay(el, i, elements.length) : delay;
-        
-        setTimeout(() => {
-          el.style.transition = `all ${duration}ms ${easing}`;
-          
-          Object.entries(props).forEach(([prop, value]) => {
-            if (prop === 'opacity') el.style.opacity = value;
-            else if (prop === 'translateX') el.style.transform = `translateX(${value}px)`;
-            else if (prop === 'translateY') el.style.transform = `translateY(${value}px)`;
-            else if (prop === 'scale') el.style.transform = `scale(${value})`;
-            else if (prop === 'transform') el.style.transform = value;
-            else el.style[prop] = value;
-          });
-          
-          if (i === elements.length - 1) {
-            setTimeout(resolve, duration);
-          }
-        }, itemDelay);
-      });
-    });
-  },
+/**
+ * Animate a counter from one value to another
+ * Uses anime.js update callback for smooth number transitions
+ */
+function animateCounter(element, targetValue, options = {}) {
+  const startValue = options.startValue || 0;
+  const decimals = options.decimals !== undefined ? options.decimals : 1;
+  const suffix = options.suffix || '';
+  const duration = options.duration || 1500;
   
-  // Stagger helper
-  stagger(value, options = {}) {
-    const start = options.start || 0;
-    const from = options.from || 'first';
-    
-    return (el, i, total) => {
-      if (from === 'center') {
-        const center = (total - 1) / 2;
-        return start + Math.abs(i - center) * value;
-      }
-      if (from === 'last') {
-        return start + (total - 1 - i) * value;
-      }
-      return start + i * value;
-    };
-  },
+  const counter = { value: startValue };
   
-  // Counter animation
-  animateCounter(element, targetValue, options = {}) {
-    const duration = options.duration || 1500;
-    const startValue = options.startValue || 0;
-    const decimals = options.decimals !== undefined ? options.decimals : 1;
-    const suffix = options.suffix || '';
-    
-    const startTime = performance.now();
-    
-    const update = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Ease out expo
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const current = startValue + (targetValue - startValue) * eased;
-      
-      // For zero decimals, round to integer
+  return anime.animate(counter, {
+    value: targetValue,
+    duration: duration,
+    ease: 'outExpo',
+    onUpdate: () => {
       if (decimals === 0) {
-        element.textContent = Math.round(current) + suffix;
+        element.textContent = Math.round(counter.value) + suffix;
       } else {
-        element.textContent = current.toFixed(decimals) + suffix;
+        element.textContent = counter.value.toFixed(decimals) + suffix;
       }
-      
-      if (progress < 1) {
-        requestAnimationFrame(update);
-      }
-    };
-    
-    requestAnimationFrame(update);
-  },
+    }
+  });
+}
+
+/**
+ * Create a looping pulse animation
+ * Returns animation instance with pause/play controls
+ */
+function createPulseAnimation(element, options = {}) {
+  const duration = options.duration || 800;
   
-  // Pulse animation
-  pulse(element, options = {}) {
-    const duration = options.duration || 800;
-    let running = true;
-    
-    const animate = () => {
-      if (!running) return;
-      
-      element.style.transition = `transform ${duration / 2}ms ease-in-out`;
-      element.style.transform = 'scale(1.2)';
-      element.style.opacity = '0.7';
-      
-      setTimeout(() => {
-        if (!running) return;
-        element.style.transform = 'scale(1)';
-        element.style.opacity = '1';
-        
-        setTimeout(() => {
-          if (running) animate();
-        }, duration / 2);
-      }, duration / 2);
-    };
-    
-    animate();
-    
-    return {
-      stop: () => {
-        running = false;
-        element.style.transform = 'scale(1)';
-        element.style.opacity = '1';
-      }
-    };
-  }
-};
+  return anime.animate(element, {
+    scale: [1, 1.2],
+    opacity: [1, 0.7],
+    duration: duration / 2,
+    ease: 'inOutSine',
+    alternate: true,
+    loop: true
+  });
+}
 
 // ============================================
 // STATE
@@ -190,19 +125,22 @@ async function runEntranceAnimations() {
   const header = document.querySelector('.utility-header');
   const cards = document.querySelectorAll('.tool-card');
   
-  // Header slide in
-  await Animations.animate(header, {
-    opacity: 1,
-    transform: 'translateY(0)'
-  }, { duration: 400, easing: 'ease-out' });
+  // Header slide in using anime.js v4
+  await anime.animate(header, {
+    opacity: [0, 1],
+    translateY: [-20, 0],
+    duration: 400,
+    ease: 'outQuad'
+  });
   
-  // Tool cards stagger reveal
-  cards.forEach((card, i) => {
-    setTimeout(() => {
-      card.style.transition = 'all 500ms cubic-bezier(0.34, 1.56, 0.64, 1)';
-      card.style.opacity = '1';
-      card.style.transform = 'translateY(0) scale(1)';
-    }, 100 + i * 120);
+  // Tool cards stagger reveal using anime.js v4
+  anime.animate(cards, {
+    opacity: [0, 1],
+    translateY: [40, 0],
+    scale: [0.9, 1],
+    duration: 500,
+    delay: anime.stagger(120, { start: 100 }),
+    ease: 'outBack'
   });
 }
 
@@ -234,41 +172,58 @@ function setupEventListeners() {
     window.utilityBeltAPI.goBack();
   });
   
-  // Back button hover animation
+  // Back button hover animation using anime.js v4
   elements.backBtn.addEventListener('mouseenter', () => {
-    elements.backBtn.style.transform = 'scale(1.1)';
+    anime.animate(elements.backBtn, {
+      scale: 1.1,
+      duration: 200,
+      ease: 'outQuad'
+    });
   });
   elements.backBtn.addEventListener('mouseleave', () => {
-    elements.backBtn.style.transform = 'scale(1)';
+    anime.animate(elements.backBtn, {
+      scale: 1,
+      duration: 200,
+      ease: 'outQuad'
+    });
   });
   
   // Filter changes - refresh candidates
   elements.followUpDays.addEventListener('change', refreshCandidates);
   elements.statusFilter.addEventListener('change', refreshCandidates);
   
-  // Slider value display
+  // Slider value display with anime.js v4 pop effect
   elements.maxStops.addEventListener('input', () => {
     const value = elements.maxStops.value;
     elements.maxStopsValue.textContent = value;
     
-    // Animate the value change
-    elements.maxStopsValue.style.transform = 'scale(1.3)';
-    setTimeout(() => {
-      elements.maxStopsValue.style.transform = 'scale(1)';
-    }, 150);
+    // Animate the value change with anime.js v4
+    anime.animate(elements.maxStopsValue, {
+      scale: [1.3, 1],
+      duration: 200,
+      ease: 'outBack'
+    });
   });
   
   // Calculate button
   elements.calculateBtn.addEventListener('click', calculateRoute);
   
-  // Calculate button hover
+  // Calculate button hover with anime.js v4
   elements.calculateBtn.addEventListener('mouseenter', () => {
     if (!state.isCalculating) {
-      elements.calculateBtn.style.transform = 'scale(1.02)';
+      anime.animate(elements.calculateBtn, {
+        scale: 1.02,
+        duration: 150,
+        ease: 'outQuad'
+      });
     }
   });
   elements.calculateBtn.addEventListener('mouseleave', () => {
-    elements.calculateBtn.style.transform = 'scale(1)';
+    anime.animate(elements.calculateBtn, {
+      scale: 1,
+      duration: 150,
+      ease: 'outQuad'
+    });
   });
   
   // Open Maps button
@@ -306,16 +261,15 @@ async function refreshCandidates() {
     
     state.eligibleLeads = await window.utilityBeltAPI.getRouteCandidates(options);
     
-    // Animate count update
+    // Animate count update with anime.js
     const oldCount = parseInt(elements.eligibleCount.textContent) || 0;
     const newCount = state.eligibleLeads.length;
     
     if (oldCount !== newCount) {
-      Animations.animateCounter(elements.eligibleCount, newCount, {
+      animateCounter(elements.eligibleCount, newCount, {
         startValue: oldCount,
         duration: 600,
-        decimals: 0,
-        suffix: ''
+        decimals: 0
       });
     }
     
@@ -352,18 +306,22 @@ async function calculateRoute() {
   
   state.isCalculating = true;
   
-  // Update button state with animation
+  // Update button state with anime.js v4
   elements.calculateBtn.disabled = true;
   elements.calculateBtn.textContent = '🔄 Calculating...';
-  elements.calculateBtn.style.opacity = '0.7';
+  anime.animate(elements.calculateBtn, {
+    opacity: 0.7,
+    duration: 200,
+    ease: 'outQuad'
+  });
   
   // Show progress section
   elements.progressSection.classList.add('visible');
   elements.resultsSection.classList.remove('visible');
   
-  // Start pulsing indicator
+  // Start pulsing indicator with anime.js
   const indicator = document.querySelector('.calc-indicator');
-  state.pulseAnimation = Animations.pulse(indicator);
+  state.pulseAnimation = createPulseAnimation(indicator);
   
   try {
     // Geocode start address first
@@ -387,9 +345,11 @@ async function calculateRoute() {
     
     state.routeResults = await window.utilityBeltAPI.calculateRoute(options);
     
-    // Hide progress
+    // Hide progress - pause anime.js animation
     if (state.pulseAnimation) {
-      state.pulseAnimation.stop();
+      state.pulseAnimation.pause();
+      // Reset the indicator scale/opacity
+      anime.set(indicator, { scale: 1, opacity: 1 });
     }
     elements.progressSection.classList.remove('visible');
     
@@ -401,7 +361,8 @@ async function calculateRoute() {
     alert('Route calculation failed: ' + error.message);
     
     if (state.pulseAnimation) {
-      state.pulseAnimation.stop();
+      state.pulseAnimation.pause();
+      anime.set(indicator, { scale: 1, opacity: 1 });
     }
     elements.progressSection.classList.remove('visible');
     
@@ -409,7 +370,11 @@ async function calculateRoute() {
     state.isCalculating = false;
     elements.calculateBtn.disabled = false;
     elements.calculateBtn.textContent = '🧮 Calculate Optimal Route';
-    elements.calculateBtn.style.opacity = '1';
+    anime.animate(elements.calculateBtn, {
+      opacity: 1,
+      duration: 200,
+      ease: 'outQuad'
+    });
   }
 }
 
@@ -417,7 +382,12 @@ function updateProgress(current, total, message) {
   elements.progressText.textContent = message || `Processing ${current} of ${total}...`;
   
   const progress = total > 0 ? current / total : 0;
-  elements.progressFill.style.transform = `scaleX(${progress})`;
+  // Animate progress bar with anime.js v4
+  anime.animate(elements.progressFill, {
+    scaleX: progress,
+    duration: 300,
+    ease: 'outQuad'
+  });
 }
 
 // ============================================
@@ -432,17 +402,15 @@ async function displayResults() {
   // Show results section
   elements.resultsSection.classList.add('visible');
   
-  // Animate stats
-  Animations.animateCounter(elements.totalDistance, routeStats.totalDistance, {
+  // Animate stats with anime.js counter
+  animateCounter(elements.totalDistance, routeStats.totalDistance, {
     duration: 1200,
-    decimals: 1,
-    suffix: ''
+    decimals: 1
   });
   
-  Animations.animateCounter(elements.stopCount, orderedLeads.length, {
+  animateCounter(elements.stopCount, orderedLeads.length, {
     duration: 800,
-    decimals: 0,
-    suffix: ''
+    decimals: 0
   });
   
   // Clear previous results
@@ -454,28 +422,37 @@ async function displayResults() {
     elements.routeList.appendChild(stopEl);
   });
   
-  // Animate route stops staggered reveal
+  // Animate route stops staggered reveal using anime.js v4
   const stops = elements.routeList.querySelectorAll('.route-stop');
-  stops.forEach((stop, i) => {
-    setTimeout(() => {
-      stop.style.transition = 'all 400ms ease-out';
-      stop.style.opacity = '1';
-      stop.style.transform = 'translateX(0)';
-    }, i * 80);
+  anime.animate(stops, {
+    opacity: [0, 1],
+    translateX: [-30, 0],
+    duration: 400,
+    delay: anime.stagger(80),
+    ease: 'outQuad'
   });
   
-  // Animate distance badges with bounce
+  // Animate distance badges with bounce using anime.js v4
   const badges = elements.routeList.querySelectorAll('.distance-badge');
-  badges.forEach((badge, i) => {
-    setTimeout(() => {
-      badge.style.transition = 'transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1)';
-      badge.style.transform = 'scale(1)';
-    }, 300 + i * 60);
+  anime.animate(badges, {
+    scale: [0, 1],
+    duration: 400,
+    delay: anime.stagger(60, { start: 300 }),
+    ease: 'outBack'
   });
   
-  // Animate maps button
+  // Animate maps button glow effect using anime.js v4
   setTimeout(() => {
-    elements.openMapsBtn.style.animation = 'pulse-glow 2s ease-in-out infinite';
+    anime.animate(elements.openMapsBtn, {
+      boxShadow: [
+        '0 4px 16px rgba(66, 133, 244, 0.3)',
+        '0 4px 24px rgba(66, 133, 244, 0.6)',
+        '0 4px 16px rgba(66, 133, 244, 0.3)'
+      ],
+      duration: 2000,
+      ease: 'inOutSine',
+      loop: true
+    });
   }, orderedLeads.length * 80 + 500);
   
   // Update export status
@@ -505,13 +482,17 @@ function createRouteStopElement(lead, index) {
     <div class="distance-badge">${lead.distanceFromPrevious || 0} mi</div>
   `;
   
-  // Click to select
+  // Click to select with anime.js
   div.addEventListener('click', () => {
     document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('selected'));
     div.classList.add('selected');
     
-    // Animate selection
-    div.style.boxShadow = '0 0 20px rgba(255,199,44,0.4)';
+    // Animate selection with anime.js v4
+    anime.animate(div, {
+      boxShadow: ['0 0 0 rgba(255,199,44,0)', '0 0 20px rgba(255,199,44,0.4)'],
+      duration: 300,
+      ease: 'outQuad'
+    });
   });
   
   return div;
@@ -1009,18 +990,16 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Add CSS for pulse-glow animation
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 4px 16px rgba(66, 133, 244, 0.3); }
-    50% { box-shadow: 0 4px 24px rgba(66, 133, 244, 0.6); }
-  }
-`;
-document.head.appendChild(style);
+// CSS keyframes replaced by anime.js animations
 
 // ============================================
 // START
 // ============================================
 
-init();
+init().catch(err => {
+  console.error('Utility Belt initialization failed:', err);
+  document.body.innerHTML = `<div style="color: red; padding: 20px;">
+    <h2>Error loading Utility Belt</h2>
+    <pre>${err.message}\n${err.stack}</pre>
+  </div>`;
+});

@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('api', {
   
   // Visit management
   addVisit: (leadId, visitData) => ipcRenderer.invoke('add-visit', leadId, visitData),
+  updateVisit: (leadId, visitIndex, visitData) => ipcRenderer.invoke('update-visit', leadId, visitIndex, visitData),
+  deleteVisit: (leadId, visitIndex) => ipcRenderer.invoke('delete-visit', leadId, visitIndex),
   
   // Contact management
   addContact: (leadId, contactData) => ipcRenderer.invoke('add-contact', leadId, contactData),

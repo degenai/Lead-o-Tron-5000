@@ -7,7 +7,7 @@
   <title>Lead-o-Tron 5000</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="page-loading">
   <div id="app">
     <!-- Header -->
     <header class="app-header">
@@ -262,11 +262,11 @@
       </div>
     </div>
 
-    <!-- Add Visit Modal -->
+    <!-- Add/Edit Visit Modal -->
     <div id="visitModal" class="modal hidden">
       <div class="modal-content modal-sm">
         <div class="modal-header">
-          <h2>Log Visit</h2>
+          <h2 id="visitModalTitle">Log Visit</h2>
           <button id="closeVisitModalBtn" class="btn btn-icon">✕</button>
         </div>
         <form id="visitForm" class="modal-body">
@@ -287,10 +287,34 @@
             </select>
           </div>
           <input type="hidden" id="visitLeadId">
+          <input type="hidden" id="visitIndex" value="">
         </form>
         <div class="modal-footer">
           <button type="button" id="cancelVisitModalBtn" class="btn btn-secondary">Cancel</button>
-          <button type="submit" form="visitForm" class="btn btn-primary">Log Visit</button>
+          <button type="submit" form="visitForm" id="visitSubmitBtn" class="btn btn-primary">Log Visit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Visit Confirmation Modal -->
+    <div id="deleteVisitModal" class="modal hidden">
+      <div class="modal-content modal-sm modal-danger">
+        <div class="modal-header">
+          <h2>⚠️ Delete Visit?</h2>
+          <button id="closeDeleteVisitBtn" class="btn btn-icon">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="delete-warning">This action cannot be undone.</p>
+          <div class="delete-preview">
+            <div class="delete-preview-date" id="deleteVisitDate"></div>
+            <div class="delete-preview-notes" id="deleteVisitNotes"></div>
+          </div>
+          <input type="hidden" id="deleteVisitLeadId">
+          <input type="hidden" id="deleteVisitIndex">
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="cancelDeleteVisitBtn" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="confirmDeleteVisitBtn" class="btn btn-danger">Delete Visit</button>
         </div>
       </div>
     </div>
@@ -330,6 +354,8 @@
     </div>
   </div>
 
+  <!-- anime.js v4 UMD build -->
+  <script src="lib/anime.min.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -246,6 +246,52 @@ ipcMain.handle('add-visit', async (event, leadId, visitData) => {
   return null;
 });
 
+ipcMain.handle('update-visit', async (event, leadId, visitIndex, visitData) => {
+  const data = await loadLeads();
+  const lead = data.leads.find(l => l.id === leadId);
+  
+  if (lead && lead.visits[visitIndex]) {
+    lead.visits[visitIndex] = {
+      date: visitData.date || lead.visits[visitIndex].date,
+      notes: visitData.notes !== undefined ? visitData.notes : lead.visits[visitIndex].notes,
+      reception: visitData.reception || lead.visits[visitIndex].reception
+    };
+    
+    // Recalculate lastVisit (most recent visit date)
+    if (lead.visits.length > 0) {
+      const sortedVisits = [...lead.visits].sort((a, b) => new Date(b.date) - new Date(a.date));
+      lead.lastVisit = sortedVisits[0].date;
+    }
+    
+    await saveLeads(data);
+    return lead;
+  }
+  
+  return null;
+});
+
+ipcMain.handle('delete-visit', async (event, leadId, visitIndex) => {
+  const data = await loadLeads();
+  const lead = data.leads.find(l => l.id === leadId);
+  
+  if (lead && lead.visits[visitIndex] !== undefined) {
+    lead.visits.splice(visitIndex, 1);
+    
+    // Recalculate lastVisit
+    if (lead.visits.length > 0) {
+      const sortedVisits = [...lead.visits].sort((a, b) => new Date(b.date) - new Date(a.date));
+      lead.lastVisit = sortedVisits[0].date;
+    } else {
+      lead.lastVisit = null;
+    }
+    
+    await saveLeads(data);
+    return lead;
+  }
+  
+  return null;
+});
+
 ipcMain.handle('export-json', async () => {
   const data = await loadLeads();
   const result = await dialog.showSaveDialog(mainWindow, {
