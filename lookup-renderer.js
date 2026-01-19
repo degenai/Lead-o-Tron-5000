@@ -74,8 +74,10 @@ extractBtn.addEventListener('click', async () => {
   setLoading(true, 'Extracting business information...');
   
   try {
-    // Inject the scraper script and execute it
-    const result = await webview.executeJavaScript(`
+    // Inline scraper script - must be self-contained for webview injection
+    // Note: This duplicates logic in knowledge-panel-scraper.js for testing
+    // Keep both in sync if making changes to selectors
+    const scraperScript = `
       (function() {
         const result = {
           name: null,
@@ -89,7 +91,6 @@ extractBtn.addEventListener('click', async () => {
           rawText: null
         };
         
-        // Try to find Knowledge Panel data using various selectors
         // Business name
         const nameSelectors = [
           '[data-attrid="title"]',
@@ -106,7 +107,7 @@ extractBtn.addEventListener('click', async () => {
           }
         }
         
-        // Address - filter out label-only text like "Address:"
+        // Address - filter out label-only text
         const addressSelectors = [
           '[data-attrid*="address"] span',
           '.LrzXr',
@@ -120,7 +121,6 @@ extractBtn.addEventListener('click', async () => {
           const el = document.querySelector(sel);
           if (el) {
             const text = el.textContent.trim();
-            // Must contain a number (street address) and be longer than a label
             const hasAddressContent = /\\d/.test(text) && text.length > 10;
             const isJustLabel = /^address:?$/i.test(text);
             if (hasAddressContent && !isJustLabel) {
@@ -141,7 +141,6 @@ extractBtn.addEventListener('click', async () => {
           const el = document.querySelector(sel);
           if (el) {
             const text = el.textContent.trim();
-            // Extract phone number pattern
             const phoneMatch = text.match(/[\\(]?\\d{3}[\\)]?[-.\\s]?\\d{3}[-.\\s]?\\d{4}/);
             if (phoneMatch) {
               result.phone = phoneMatch[0];
@@ -202,13 +201,16 @@ extractBtn.addEventListener('click', async () => {
           result.website = websiteEl.href;
         }
         
-        // Fallback: grab all Knowledge Panel text
-        const panel = document.querySelector('.kp-wholepage, .liYKde, .I6TXqe, .kp-header');
-        if (panel) {
-          result.rawText = panel.innerText.substring(0, 2000);
+        // Fallback: grab Knowledge Panel text
+        const panelSelectors = ['.kp-wholepage', '.liYKde', '.I6TXqe', '.kp-header'];
+        for (const sel of panelSelectors) {
+          const panel = document.querySelector(sel);
+          if (panel) {
+            result.rawText = panel.innerText.substring(0, 2000);
+            break;
+          }
         }
         
-        // If no panel found, try getting the right sidebar
         if (!result.rawText) {
           const sidebar = document.querySelector('#rhs, .knowledge-panel');
           if (sidebar) {
@@ -218,7 +220,10 @@ extractBtn.addEventListener('click', async () => {
         
         return result;
       })();
-    `);
+    `;
+    
+    // Inject the scraper script and execute it in the webview
+    const result = await webview.executeJavaScript(scraperScript);
     
     // Send result back to main process
     window.lookupAPI.sendExtractedData(result);

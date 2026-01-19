@@ -1,10 +1,13 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { v4: uuidv4 } = require('uuid');
 const { normalizeLeadsData } = require('./data-normalizer');
-const { buildDeepseekRequestBody, parseDeepseekContent, buildParseRequestBody } = require('./deepseek-utils');
+const { parseDeepseekContent, buildParseRequestBody } = require('./deepseek-utils');
+const { DEFAULTS } = require('./constants');
+const { solveRoute, generateGoogleMapsUrl } = require('./route-finder');
+const { geocodeAddress, geocodeLeads } = require('./geocoding');
 
 // Data file paths
 const userDataPath = app.getPath('userData');
@@ -13,6 +16,7 @@ const configFilePath = path.join(userDataPath, 'config.json');
 
 let mainWindow;
 let lookupWindow = null;
+let utilityBeltWindow = null;
 let pendingLookupResolve = null;
 
 function createWindow() {
@@ -85,15 +89,26 @@ async function saveLeads(data) {
 }
 
 async function loadConfig() {
+  const defaults = {
+    deepseekApiKey: '',
+    defaultZipcode: '',
+    defaultLocation: '',
+    routeStartAddress: '',
+    routeStartCoords: null,
+    followUpDays: 14
+  };
+  
   try {
     if (fs.existsSync(configFilePath)) {
       const data = await fsp.readFile(configFilePath, 'utf-8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      // Merge with defaults to ensure all fields exist
+      return { ...defaults, ...parsed };
     }
   } catch (error) {
     console.error('Error loading config:', error);
   }
-  return { deepseekApiKey: '', defaultZipcode: '', defaultLocation: '' };
+  return defaults;
 }
 
 async function saveConfig(config) {
@@ -159,7 +174,7 @@ ipcMain.handle('create-lead', async (event, leadData) => {
       vibes: leadData.scores?.vibes || 3
     },
     totalScore: (leadData.scores?.space || 3) + (leadData.scores?.traffic || 3) + (leadData.scores?.vibes || 3),
-    status: 'active',
+    status: DEFAULTS.STATUS,
     created: new Date().toISOString(),
     lastVisit: null,
     aiEnhanced: leadData.aiEnhanced || false
@@ -218,7 +233,7 @@ ipcMain.handle('add-visit', async (event, leadId, visitData) => {
     const visit = {
       date: visitData.date || new Date().toISOString(),
       notes: visitData.notes || '',
-      reception: visitData.reception || 'lukewarm'
+      reception: visitData.reception || DEFAULTS.RECEPTION
     };
     
     lead.visits.push(visit);
@@ -284,58 +299,13 @@ ipcMain.handle('get-data-path', async () => {
   return leadsFilePath;
 });
 
-// @DEPRECATED: DeepSeek API lookup with web search
-// This method is unreliable - use 'open-lookup-window' instead for BrowserView-powered lookup
-// Kept for backward compatibility only
-ipcMain.handle('deepseek-lookup', async (event, businessName, existingNeighborhoods = []) => {
-  console.warn('DEPRECATED: deepseek-lookup is unreliable. Use open-lookup-window instead.');
-  const config = await loadConfig();
-  
-  if (!config.deepseekApiKey) {
-    return { success: false, error: 'API key not configured' };
-  }
-  
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    const requestBody = buildDeepseekRequestBody({
-      businessName,
-      existingNeighborhoods,
-      zipcode: config.defaultZipcode || '',
-      location: config.defaultLocation || ''
-    });
-
-    const response = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.deepseekApiKey}`
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    const result = await response.json();
-    const content = result.choices[0]?.message?.content || '';
-    
-    // Try to parse the response as JSON
-    try {
-      const { data, warning } = parseDeepseekContent(content);
-      return { success: true, data, warning };
-    } catch (parseError) {
-      return { success: false, error: 'Could not parse AI response' };
-    }
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      return { success: false, error: 'Request timed out' };
-    }
-    return { success: false, error: error.message };
-  }
+// @DEPRECATED: This handler is no longer functional.
+// Use 'open-lookup-window' instead for BrowserView-powered lookup.
+ipcMain.handle('deepseek-lookup', async () => {
+  return { 
+    success: false, 
+    error: 'This method is deprecated. Use the Lookup button to open the Google search window.' 
+  };
 });
 
 ipcMain.handle('add-activity-log', async (event, message) => {
@@ -531,83 +501,306 @@ ipcMain.on('lookup-cancel', () => {
 // ============ CONTACT MANAGEMENT ============
 
 ipcMain.handle('add-contact', async (event, leadId, contactData) => {
-  const data = await loadLeads();
-  const lead = data.leads.find(l => l.id === leadId);
-  
-  if (lead) {
-    const newContact = {
-      id: uuidv4(),
-      name: contactData.name || '',
-      role: contactData.role || '',
-      phone: contactData.phone || '',
-      email: contactData.email || '',
-      isPrimary: contactData.isPrimary || lead.contacts.length === 0 // First contact is primary by default
-    };
+  try {
+    const data = await loadLeads();
+    const lead = data.leads.find(l => l.id === leadId);
     
-    // If this is set as primary, unset others
-    if (newContact.isPrimary) {
-      lead.contacts.forEach(c => c.isPrimary = false);
+    if (lead) {
+      const newContact = {
+        id: uuidv4(),
+        name: contactData.name || '',
+        role: contactData.role || '',
+        phone: contactData.phone || '',
+        email: contactData.email || '',
+        isPrimary: contactData.isPrimary || lead.contacts.length === 0 // First contact is primary by default
+      };
+      
+      // If this is set as primary, unset others
+      if (newContact.isPrimary) {
+        lead.contacts.forEach(c => c.isPrimary = false);
+      }
+      
+      lead.contacts.push(newContact);
+      await saveLeads(data);
+      return lead;
     }
     
-    lead.contacts.push(newContact);
-    await saveLeads(data);
-    return lead;
+    return null;
+  } catch (error) {
+    console.error('Error adding contact:', error);
+    throw error;
   }
-  
-  return null;
 });
 
 ipcMain.handle('update-contact', async (event, leadId, contactId, updates) => {
-  const data = await loadLeads();
-  const lead = data.leads.find(l => l.id === leadId);
-  
-  if (lead) {
-    const contactIndex = lead.contacts.findIndex(c => c.id === contactId);
-    if (contactIndex !== -1) {
-      lead.contacts[contactIndex] = { ...lead.contacts[contactIndex], ...updates };
-      await saveLeads(data);
-      return lead;
+  try {
+    const data = await loadLeads();
+    const lead = data.leads.find(l => l.id === leadId);
+    
+    if (lead) {
+      const contactIndex = lead.contacts.findIndex(c => c.id === contactId);
+      if (contactIndex !== -1) {
+        lead.contacts[contactIndex] = { ...lead.contacts[contactIndex], ...updates };
+        await saveLeads(data);
+        return lead;
+      }
     }
+    
+    return null;
+  } catch (error) {
+    console.error('Error updating contact:', error);
+    throw error;
   }
-  
-  return null;
 });
 
 ipcMain.handle('delete-contact', async (event, leadId, contactId) => {
-  const data = await loadLeads();
-  const lead = data.leads.find(l => l.id === leadId);
-  
-  if (lead) {
-    const contactIndex = lead.contacts.findIndex(c => c.id === contactId);
-    if (contactIndex !== -1) {
-      const deletedContact = lead.contacts[contactIndex];
-      lead.contacts.splice(contactIndex, 1);
-      
-      // If we deleted the primary, make the first remaining contact primary
-      if (deletedContact.isPrimary && lead.contacts.length > 0) {
-        lead.contacts[0].isPrimary = true;
+  try {
+    const data = await loadLeads();
+    const lead = data.leads.find(l => l.id === leadId);
+    
+    if (lead) {
+      const contactIndex = lead.contacts.findIndex(c => c.id === contactId);
+      if (contactIndex !== -1) {
+        const deletedContact = lead.contacts[contactIndex];
+        lead.contacts.splice(contactIndex, 1);
+        
+        // If we deleted the primary, make the first remaining contact primary
+        if (deletedContact.isPrimary && lead.contacts.length > 0) {
+          lead.contacts[0].isPrimary = true;
+        }
+        
+        await saveLeads(data);
+        return lead;
       }
-      
-      await saveLeads(data);
-      return lead;
     }
+    
+    return null;
+  } catch (error) {
+    console.error('Error deleting contact:', error);
+    throw error;
   }
-  
-  return null;
 });
 
 ipcMain.handle('set-primary-contact', async (event, leadId, contactId) => {
-  const data = await loadLeads();
-  const lead = data.leads.find(l => l.id === leadId);
-  
-  if (lead) {
-    // Unset all as primary, then set the target
-    lead.contacts.forEach(c => {
-      c.isPrimary = c.id === contactId;
-    });
-    await saveLeads(data);
-    return lead;
+  try {
+    const data = await loadLeads();
+    const lead = data.leads.find(l => l.id === leadId);
+    
+    if (lead) {
+      // Unset all as primary, then set the target
+      lead.contacts.forEach(c => {
+        c.isPrimary = c.id === contactId;
+      });
+      await saveLeads(data);
+      return lead;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error setting primary contact:', error);
+    throw error;
   }
-  
-  return null;
+});
+
+// ============ UTILITY BELT ============
+
+function createUtilityBeltWindow() {
+  if (utilityBeltWindow && !utilityBeltWindow.isDestroyed()) {
+    utilityBeltWindow.focus();
+    return;
+  }
+
+  utilityBeltWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 800,
+    minHeight: 600,
+    title: 'Utility Belt - Lead-o-Tron 5000',
+    icon: path.join(__dirname, 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'utility-belt-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    backgroundColor: '#0a0a0a'
+  });
+
+  utilityBeltWindow.loadFile('utility-belt.html');
+
+  utilityBeltWindow.on('closed', () => {
+    utilityBeltWindow = null;
+  });
+}
+
+// Open utility belt window
+ipcMain.handle('open-utility-belt', async () => {
+  createUtilityBeltWindow();
+  return true;
+});
+
+// Close utility belt window
+ipcMain.on('utility-belt-close', () => {
+  if (utilityBeltWindow && !utilityBeltWindow.isDestroyed()) {
+    utilityBeltWindow.close();
+  }
+});
+
+// Get route candidates (leads due for follow-up)
+ipcMain.handle('get-route-candidates', async (event, options) => {
+  try {
+    const data = await loadLeads();
+    const now = Date.now();
+    const followUpDays = options.followUpDays || 14;
+    const statusFilter = options.statusFilter || 'active';
+    
+    let candidates = data.leads.filter(lead => {
+      // Status filter
+      if (statusFilter === 'active' && lead.status !== 'active') {
+        return false;
+      }
+      
+      // Must have an address for routing
+      if (!lead.address || !lead.address.trim()) {
+        return false;
+      }
+      
+      // Follow-up days filter (0 = all leads)
+      if (followUpDays > 0) {
+        if (!lead.lastVisit) {
+          // Never visited - always include
+          return true;
+        }
+        
+        const daysSinceVisit = Math.floor((now - new Date(lead.lastVisit).getTime()) / (1000 * 60 * 60 * 24));
+        return daysSinceVisit >= followUpDays;
+      }
+      
+      return true;
+    });
+    
+    return candidates;
+  } catch (error) {
+    console.error('Error getting route candidates:', error);
+    throw error;
+  }
+});
+
+// Calculate optimal route
+ipcMain.handle('calculate-route', async (event, options) => {
+  try {
+    const data = await loadLeads();
+    const { startCoords, maxStops, followUpDays, statusFilter } = options;
+    
+    // Get candidates
+    const now = Date.now();
+    let candidates = data.leads.filter(lead => {
+      if (statusFilter === 'active' && lead.status !== 'active') return false;
+      if (!lead.address || !lead.address.trim()) return false;
+      
+      if (followUpDays > 0) {
+        if (!lead.lastVisit) return true;
+        const daysSinceVisit = Math.floor((now - new Date(lead.lastVisit).getTime()) / (1000 * 60 * 60 * 24));
+        return daysSinceVisit >= followUpDays;
+      }
+      return true;
+    });
+    
+    // Geocode any leads without coords
+    const leadsNeedingGeocode = candidates.filter(lead => 
+      !lead.coords || !lead.coords.lat || !lead.coords.lon
+    );
+    
+    if (leadsNeedingGeocode.length > 0) {
+      // Send progress updates
+      let geocoded = 0;
+      for (const lead of leadsNeedingGeocode) {
+        geocoded++;
+        
+        // Send progress to utility belt window
+        if (utilityBeltWindow && !utilityBeltWindow.isDestroyed()) {
+          utilityBeltWindow.webContents.send('geocode-progress', {
+            current: geocoded,
+            total: leadsNeedingGeocode.length,
+            message: `Geocoding ${lead.name}... (${geocoded}/${leadsNeedingGeocode.length})`
+          });
+        }
+        
+        const coords = await geocodeAddress(lead.address);
+        if (coords) {
+          lead.coords = coords;
+          
+          // Update lead in data
+          const leadIndex = data.leads.findIndex(l => l.id === lead.id);
+          if (leadIndex !== -1) {
+            data.leads[leadIndex].coords = coords;
+          }
+        }
+      }
+      
+      // Save updated coords
+      await saveLeads(data);
+    }
+    
+    // Solve the route
+    const result = solveRoute(startCoords, candidates, maxStops);
+    
+    return result;
+  } catch (error) {
+    console.error('Error calculating route:', error);
+    throw error;
+  }
+});
+
+// Geocode a single address
+ipcMain.handle('geocode-address', async (event, address) => {
+  try {
+    return await geocodeAddress(address);
+  } catch (error) {
+    console.error('Error geocoding address:', error);
+    throw error;
+  }
+});
+
+// Open external URL (for Google Maps)
+ipcMain.handle('open-external-url', async (event, url) => {
+  try {
+    await shell.openExternal(url);
+    return true;
+  } catch (error) {
+    console.error('Error opening URL:', error);
+    throw error;
+  }
+});
+
+// Save route notes as HTML file
+ipcMain.handle('save-route-notes', async (event, html) => {
+  try {
+    // Get default filename with date
+    const date = new Date().toISOString().split('T')[0];
+    const defaultPath = `route-notes-${date}.html`;
+    
+    // Show save dialog
+    const result = await dialog.showSaveDialog({
+      title: 'Save Route Notes',
+      defaultPath: defaultPath,
+      filters: [
+        { name: 'HTML Files', extensions: ['html'] }
+      ]
+    });
+    
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+    
+    // Write the file
+    await fsp.writeFile(result.filePath, html, 'utf8');
+    
+    // Open the file in default browser
+    await shell.openPath(result.filePath);
+    
+    return { success: true, filePath: result.filePath };
+  } catch (error) {
+    console.error('Error saving route notes:', error);
+    throw error;
+  }
 });

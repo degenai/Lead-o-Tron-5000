@@ -1,65 +1,5 @@
 const USEFUL_FIELDS = ['correctName', 'address', 'neighborhood', 'phone', 'businessType'];
 
-/**
- * @deprecated Use BrowserView lookup with buildParseRequestBody instead.
- * This function uses DeepSeek's unreliable web_search feature.
- * Kept for backward compatibility only.
- */
-function buildDeepseekRequestBody({ businessName, existingNeighborhoods, zipcode, location }) {
-  const neighborhoodList = existingNeighborhoods.length > 0
-    ? existingNeighborhoods.join(', ')
-    : 'none defined yet';
-
-  // Build location context from both location (city/state) and zipcode
-  const locationParts = [];
-  if (location) locationParts.push(location);
-  if (zipcode) locationParts.push(zipcode);
-  const locationContext = locationParts.length > 0
-    ? `in ${locationParts.join(' ')}`
-    : '';
-
-  return {
-    model: 'deepseek-chat',
-    messages: [
-      {
-        role: 'system',
-        content: `You are a helpful assistant that looks up local business information. Use web search to find accurate, current information.
-
-CRITICAL: Only return information you can verify from Google Maps, Google Business Profile, or the business's official website. If you cannot find the exact business at the specified location, return empty strings rather than guessing.
-
-Return ONLY valid JSON with no markdown formatting or code blocks. Return this exact structure:
-{
-  "correctName": "the official/correct business name with proper spelling, accents, capitalization",
-  "address": "full street address from Google Maps or empty string if not found",
-  "neighborhood": "area/district name - PREFER choosing from existing neighborhoods if applicable",
-  "phone": "business phone number or empty string",
-  "businessType": "type of business or empty string",
-  "isNewNeighborhood": true/false (true only if suggesting a neighborhood not in the existing list),
-  "confidence": "high/medium/low - based on how certain you are this is the correct business",
-  "source": "where you found this info (e.g., 'Google Maps', 'business website') or empty string"
-}
-
-IMPORTANT RULES:
-1. If you find multiple businesses with similar names, pick the one closest to the provided location.
-2. If you're not confident this is the right business, set confidence to "low" or return empty strings.
-3. Always verify the address is in the correct city/state before returning it.
-
-EXISTING NEIGHBORHOODS (prefer these): ${neighborhoodList}
-
-Only suggest a new neighborhood if the business location clearly doesn't fit any existing ones.`
-      },
-      {
-        role: 'user',
-        content: `Look up business information for: "${businessName}" ${locationContext}. Search Google Maps or Google Business Profile for the current address, phone number, and details. If you cannot find this specific business at this location, return empty strings. Return only the JSON object.`
-      }
-    ],
-    thinking: { type: 'enabled' },
-    web_search: { enable: true },
-    temperature: 0,
-    max_tokens: 600
-  };
-}
-
 function parseDeepseekContent(content) {
   const cleaned = String(content ?? '').replace(/```json\n?|\n?```/g, '').trim();
   if (!cleaned) {
@@ -129,7 +69,6 @@ RULES:
 }
 
 module.exports = {
-  buildDeepseekRequestBody,
   parseDeepseekContent,
   buildParseRequestBody
 };

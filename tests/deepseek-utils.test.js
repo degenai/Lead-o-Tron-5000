@@ -1,34 +1,6 @@
-const { buildDeepseekRequestBody, parseDeepseekContent, buildParseRequestBody } = require('../deepseek-utils');
+const { parseDeepseekContent, buildParseRequestBody } = require('../deepseek-utils');
 
 describe('deepseek-utils', () => {
-  describe('buildDeepseekRequestBody', () => {
-    test('includes thinking, web_search, and location context', () => {
-      const body = buildDeepseekRequestBody({
-        businessName: 'BT Collectables',
-        existingNeighborhoods: ['Towne Lake'],
-        zipcode: '30189',
-        location: 'Woodstock, GA'
-      });
-
-      expect(body.thinking).toEqual({ type: 'enabled' });
-      expect(body.web_search).toEqual({ enable: true });
-      expect(body.messages[1].content).toContain('in Woodstock, GA 30189');
-      expect(body.messages[0].content).toContain('Google Maps');
-      expect(body.temperature).toBe(0);
-    });
-
-    test('handles missing location gracefully', () => {
-      const body = buildDeepseekRequestBody({
-        businessName: 'Test Business',
-        existingNeighborhoods: [],
-        zipcode: '',
-        location: ''
-      });
-
-      expect(body.messages[1].content).not.toContain('in ');
-    });
-  });
-
   describe('parseDeepseekContent', () => {
     test('parses JSON and returns data', () => {
       const content = JSON.stringify({

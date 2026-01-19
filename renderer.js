@@ -17,6 +17,7 @@ const elements = {
   exportBtn: document.getElementById('exportBtn'),
   importBtn: document.getElementById('importBtn'),
   settingsBtn: document.getElementById('settingsBtn'),
+  utilityBeltBtn: document.getElementById('utilityBeltBtn'),
   clearFiltersBtn: document.getElementById('clearFiltersBtn'),
   sortOrderBtn: document.getElementById('sortOrderBtn'),
   
@@ -153,6 +154,7 @@ function setupEventListeners() {
   elements.exportBtn.addEventListener('click', handleExport);
   elements.importBtn.addEventListener('click', handleImport);
   elements.settingsBtn.addEventListener('click', () => openSettingsModal());
+  elements.utilityBeltBtn.addEventListener('click', () => window.api.openUtilityBelt());
   
   // Filters
   elements.filterStatus.addEventListener('change', renderLeadList);
@@ -744,6 +746,8 @@ function renderContactsSection(lead) {
 function closeLeadModal() {
   elements.leadModal.classList.add('hidden');
   elements.leadForm.reset();
+  formContacts = []; // Clear contacts to prevent stale data on next open
+  elements.aiStatus.classList.add('hidden'); // Hide any AI status messages
 }
 
 async function handleLeadSubmit(e) {

@@ -37,5 +37,8 @@ contextBridge.exposeInMainWorld('api', {
   addActivityLog: (message) => ipcRenderer.invoke('add-activity-log', message),
   
   // Utility
-  getDataPath: () => ipcRenderer.invoke('get-data-path')
+  getDataPath: () => ipcRenderer.invoke('get-data-path'),
+  
+  // Utility Belt
+  openUtilityBelt: () => ipcRenderer.invoke('open-utility-belt')
 });

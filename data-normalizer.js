@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const { STATUS_VALUES, RECEPTION_VALUES, DEFAULTS } = require('./constants');
 
 function normalizeLeadsData(rawData) {
   let needsSave = false;
@@ -55,8 +56,8 @@ function normalizeLead(lead) {
   rawLead.address = address;
   rawLead.neighborhood = neighborhood;
 
-  if (typeof rawLead.status !== 'string' || !['active', 'converted', 'archived'].includes(rawLead.status)) {
-    rawLead.status = 'active';
+  if (typeof rawLead.status !== 'string' || !STATUS_VALUES.includes(rawLead.status)) {
+    rawLead.status = DEFAULTS.STATUS;
     changed = true;
   }
 
@@ -181,13 +182,13 @@ function normalizeContacts(rawLead) {
 function normalizeVisit(visit) {
   if (!visit || typeof visit !== 'object') {
     return {
-      visit: { date: new Date().toISOString(), notes: '', reception: 'lukewarm' },
+      visit: { date: new Date().toISOString(), notes: '', reception: DEFAULTS.RECEPTION },
       changed: true
     };
   }
   const date = typeof visit.date === 'string' ? visit.date : new Date().toISOString();
   const notes = typeof visit.notes === 'string' ? visit.notes : '';
-  const reception = ['warm', 'lukewarm', 'cold'].includes(visit.reception) ? visit.reception : 'lukewarm';
+  const reception = RECEPTION_VALUES.includes(visit.reception) ? visit.reception : DEFAULTS.RECEPTION;
   const changed = date !== visit.date || notes !== visit.notes || reception !== visit.reception;
   return {
     visit: { date, notes, reception },
